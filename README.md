@@ -1,5 +1,9 @@
 # atpass
 
+** IMPORTANT **
+
+This is a testbed for vibe-coding and atproto.  This is not something you should trust real passwords with.  If https://github.com/bluesky-social/proposals/tree/main/0016-permissioned-data gets released, it may be worth revisiting that.
+
 A password manager that stores your vault as end-to-end encrypted records in
 your own [atproto](https://atproto.com) (Bluesky) PDS repo, instead of a
 proprietary server. Your PDS operator only ever sees ciphertext.
