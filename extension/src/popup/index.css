@@ -1,0 +1,276 @@
+:root {
+  color-scheme: light dark;
+  --bg: #16181e;
+  --panel-2: #1e222b;
+  --border: #2a2f3a;
+  --text: #e7e9ee;
+  --muted: #8b93a3;
+  --accent: #5b8dfc;
+  --accent-2: #4472e0;
+  --danger: #e5484d;
+  --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+
+@media (prefers-color-scheme: light) {
+  :root {
+    --bg: #ffffff;
+    --panel-2: #f0f1f4;
+    --border: #dde1e8;
+    --text: #1a1d23;
+    --muted: #666f80;
+    --accent: #3861e0;
+    --accent-2: #2c4fc2;
+    --danger: #d5343a;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  width: 340px;
+  min-height: 200px;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 13px;
+}
+
+h1 {
+  font-size: 1.2rem;
+  margin: 0 0 0.2rem;
+}
+
+h2 {
+  font-size: 1rem;
+  margin: 0 0 0.6rem;
+}
+
+.screen,
+.popup {
+  padding: 1rem;
+}
+
+.subtitle {
+  color: var(--muted);
+  margin: 0 0 1rem;
+  font-size: 0.85rem;
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.form label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+input,
+textarea {
+  font: inherit;
+  padding: 0.4rem 0.5rem;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--panel-2);
+  color: var(--text);
+  width: 100%;
+}
+
+input:focus,
+textarea:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
+}
+
+button {
+  font: inherit;
+  padding: 0.45rem 0.8rem;
+  border-radius: 6px;
+  border: none;
+  background: var(--accent);
+  color: white;
+  cursor: pointer;
+}
+
+button:hover {
+  background: var(--accent-2);
+}
+
+button:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+button.secondary {
+  background: transparent;
+  color: var(--text);
+  border: 1px solid var(--border);
+}
+
+button.secondary:hover {
+  background: var(--panel-2);
+}
+
+button.small {
+  padding: 0.25rem 0.5rem;
+  font-size: 0.75rem;
+}
+
+button.icon-btn {
+  background: transparent;
+  border: 1px solid var(--border);
+  padding: 0.3rem 0.45rem;
+  color: var(--text);
+  flex-shrink: 0;
+}
+
+button.icon-btn:hover {
+  background: var(--panel-2);
+}
+
+.hint {
+  font-size: 0.75rem;
+  color: var(--muted);
+  margin: 0;
+}
+
+.hint.warning {
+  color: var(--danger);
+}
+
+.error {
+  color: var(--danger);
+  font-size: 0.8rem;
+  margin: 0 0 0.5rem;
+}
+
+.notice {
+  color: var(--muted);
+  font-size: 0.8rem;
+  margin: 0 0 0.5rem;
+}
+
+.muted {
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.advanced {
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.advanced summary {
+  cursor: pointer;
+}
+
+.row {
+  display: flex;
+  gap: 0.4rem;
+}
+
+.password-field {
+  display: flex;
+  gap: 0.3rem;
+}
+
+.password-field input {
+  flex: 1;
+}
+
+/* Vault popup */
+
+.sidebar-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding-bottom: 0.6rem;
+  margin-bottom: 0.6rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.handle {
+  font-size: 0.85rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.search {
+  margin-bottom: 0.5rem;
+}
+
+.add-btn {
+  width: 100%;
+  margin-bottom: 0.6rem;
+}
+
+.item-scroll {
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.section-label {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+  margin: 0.5rem 0 0.25rem;
+}
+
+.item-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.item-row {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.item-main {
+  flex: 1;
+  text-align: left;
+  background: transparent;
+  color: var(--text);
+  border: none;
+  padding: 0.4rem 0.5rem;
+  border-radius: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 0.05rem;
+  min-width: 0;
+}
+
+.item-main:hover {
+  background: var(--panel-2);
+}
+
+.item-title {
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.item-sub {
+  font-size: 0.72rem;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

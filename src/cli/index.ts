@@ -3,26 +3,14 @@ import { Command } from "commander";
 import prompts from "prompts";
 import clipboardy from "clipboardy";
 import type { AtpAgent } from "@atproto/api";
-import {
-  getAgent,
-  login as atpLogin,
-  logout as atpLogout,
-  getVaultMeta,
-  DEFAULT_SERVICE,
-} from "../core/atproto.js";
-import {
-  initVault,
-  unlockVault,
-  addItem,
-  getItem,
-  removeItem,
-  listItems,
-  WrongMasterPasswordError,
-  VaultNotInitializedError,
-  ItemNotFoundError,
-} from "../core/vault.js";
-import { generatePassword } from "../core/crypto.js";
-import { loadSession } from "../core/config.js";
+import { getAgent, login as atpLogin, logout as atpLogout, DEFAULT_SERVICE } from "../core/node/session.js";
+import { getVaultMeta } from "../core/records.js";
+import { createVault, WrongMasterPasswordError, VaultNotInitializedError, ItemNotFoundError } from "../core/vault.js";
+import { nodeCrypto } from "../core/node/crypto.js";
+import { loadSession } from "../core/node/config.js";
+
+const { generatePassword } = nodeCrypto;
+const { initVault, unlockVault, addItem, getItem, removeItem, listItems } = createVault(nodeCrypto);
 
 const program = new Command();
 program.name("atpass").description("A password manager stored as encrypted records in your atproto (Bluesky) PDS repo.").version("0.1.0");
@@ -39,7 +27,7 @@ async function promptMasterPassword(message = "Master password"): Promise<string
 }
 
 /** Get an authenticated agent + unlocked vault key, prompting for the master password. */
-async function unlock(): Promise<{ agent: AtpAgent; key: Buffer }> {
+async function unlock(): Promise<{ agent: AtpAgent; key: Uint8Array }> {
   const agent = await getAgent();
   const masterPassword = await promptMasterPassword();
   try {
