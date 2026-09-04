@@ -24,7 +24,7 @@
     "web:build": "npm run build --workspace web",
     "ext:dev": "npm run dev --workspace extension",
     "ext:build": "npm run build --workspace extension",
-    "test": "tsx --test test/**/*.test.ts"
+    "test": "node scripts/run-tests.mjs"
   },
   "dependencies": {
     "@atproto/api": "^0.20.42",
