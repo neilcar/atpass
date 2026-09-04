@@ -1,0 +1,31 @@
+{
+  "name": "atpass",
+  "version": "0.1.0",
+  "description": "A password manager that stores your encrypted vault as records in your own atproto (Bluesky) PDS repo.",
+  "type": "module",
+  "private": true,
+  "bin": {
+    "atpass": "./dist/cli/index.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsx src/cli/index.ts",
+    "start": "node dist/cli/index.js"
+  },
+  "dependencies": {
+    "@atproto/api": "^0.13.35",
+    "@node-rs/argon2": "^2.0.2",
+    "clipboardy": "^4.0.0",
+    "commander": "^12.1.0",
+    "prompts": "^2.4.2"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "@types/prompts": "^2.4.9",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

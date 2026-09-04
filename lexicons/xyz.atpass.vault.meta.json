@@ -1,0 +1,40 @@
+{
+  "lexicon": 1,
+  "id": "xyz.atpass.vault.meta",
+  "defs": {
+    "main": {
+      "type": "record",
+      "description": "Per-account vault metadata: key-derivation parameters and an encrypted verifier used to check a master password without decrypting any real vault item. Always stored at rkey 'self'. Contains no plaintext secrets.",
+      "key": "literal:self",
+      "record": {
+        "type": "object",
+        "required": ["kdf", "salt", "kdfParams", "verifier", "createdAt"],
+        "properties": {
+          "kdf": {
+            "type": "string",
+            "const": "argon2id",
+            "description": "Key-derivation function used to turn the master password into an encryption key."
+          },
+          "salt": {
+            "type": "string",
+            "description": "Base64-encoded random salt for the KDF, unique per account."
+          },
+          "kdfParams": {
+            "type": "object",
+            "required": ["memoryCost", "timeCost", "parallelism"],
+            "properties": {
+              "memoryCost": { "type": "integer" },
+              "timeCost": { "type": "integer" },
+              "parallelism": { "type": "integer" }
+            }
+          },
+          "verifier": {
+            "type": "string",
+            "description": "Base64-encoded AES-256-GCM encryption (iv + ciphertext + authTag) of a fixed known string under the derived vault key, used solely to detect an incorrect master password."
+          },
+          "createdAt": { "type": "string", "format": "datetime" }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,32 @@
+{
+  "lexicon": 1,
+  "id": "xyz.atpass.vault.item",
+  "defs": {
+    "main": {
+      "type": "record",
+      "description": "One end-to-end encrypted vault entry (login credentials, note, etc). Every field that could reveal what the entry is for lives inside `ciphertext`; the PDS and anyone reading the repo sees only opaque bytes plus a content-addressed record key.",
+      "key": "any",
+      "record": {
+        "type": "object",
+        "required": ["alg", "iv", "ciphertext", "createdAt"],
+        "properties": {
+          "alg": {
+            "type": "string",
+            "const": "AES-256-GCM",
+            "description": "Symmetric cipher used to encrypt the item payload with the vault key derived from the master password."
+          },
+          "iv": {
+            "type": "string",
+            "description": "Base64-encoded 12-byte random nonce, unique per item, used as GCM IV. The record key is used as GCM additional authenticated data to bind ciphertext to its record."
+          },
+          "ciphertext": {
+            "type": "string",
+            "description": "Base64-encoded AES-GCM ciphertext + auth tag of the JSON-encoded item payload: { title, username, password, url, notes }."
+          },
+          "createdAt": { "type": "string", "format": "datetime" },
+          "updatedAt": { "type": "string", "format": "datetime" }
+        }
+      }
+    }
+  }
+}
