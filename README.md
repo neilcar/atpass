@@ -46,14 +46,29 @@ in-memory fake atproto repo).
 
 [`.github/workflows/release.yml`](.github/workflows/release.yml) builds and
 tests the CLI on Linux/macOS/Windows on every push and PR to `main`. Pushing
-a tag matching `v*.*.*` (after the tag's version and `package.json`'s
-`"version"` match) additionally packs it and attaches the tarball to a new
-GitHub Release:
+a tag matching `v*.*.*` (after checking the tag's version matches
+`package.json`'s `"version"`) additionally:
+
+- packs the CLI and the [Firefox extension](#firefox-extension) (its
+  manifest version is stamped from `package.json` at build time, so there's
+  still only one version number to bump) and attaches both to a new GitHub
+  Release
+- builds the [web app](#web-app) as a container image
+  (`web/Dockerfile` — multi-stage: Node build, then static files served by
+  nginx) and pushes it to Docker Hub as `<namespace>/atpass-web`, tagged with
+  the version and `latest`
 
 ```bash
 npm version patch   # or minor/major — bumps package.json and commits
 git push && git push --tags
 ```
+
+The Docker push needs a repo **variable** `DOCKERHUB_USERNAME` (Settings →
+Secrets and variables → Actions → Variables — it's not sensitive, so it
+doesn't need to be a secret) and a repo **secret** `DOCKERHUB_TOKEN` (a
+Docker Hub [access token](https://app.docker.com/settings/personal-access-tokens),
+not your Docker Hub password). Without those the `docker` job fails at the
+login step — the `test` and `release` jobs are unaffected either way.
 
 Not published to the npm registry by default (the package is
 `"private": true`) — see the comment at the bottom of the workflow file for
@@ -99,6 +114,8 @@ CLI via `src/core`.
 ```bash
 npm run web:dev     # dev server at http://localhost:5173
 npm run web:build   # production build to web/dist
+docker build -f web/Dockerfile -t atpass-web .   # from the repo root — see web/Dockerfile
+docker run --rm -p 8080:80 atpass-web            # -> http://localhost:8080
 ```
 
 It's a client-only static app: sign in with your handle + App Password (same
