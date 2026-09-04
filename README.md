@@ -38,6 +38,27 @@ npm link   # optional: puts `atpass` on your PATH
 
 Or run directly during development with `npm run dev -- <command>`.
 
+`npm test` runs the test suite (crypto roundtrips, the node/web crypto
+adapters' cross-compatibility, and a full vault lifecycle against an
+in-memory fake atproto repo).
+
+### Releasing
+
+[`.github/workflows/release.yml`](.github/workflows/release.yml) builds and
+tests the CLI on Linux/macOS/Windows on every push and PR to `main`. Pushing
+a tag matching `v*.*.*` (after the tag's version and `package.json`'s
+`"version"` match) additionally packs it and attaches the tarball to a new
+GitHub Release:
+
+```bash
+npm version patch   # or minor/major — bumps package.json and commits
+git push && git push --tags
+```
+
+Not published to the npm registry by default (the package is
+`"private": true`) — see the comment at the bottom of the workflow file for
+what that would take to turn on.
+
 ## Usage
 
 ```bash

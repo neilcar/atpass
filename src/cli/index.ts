@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { createRequire } from "node:module";
 import { Command } from "commander";
 import prompts from "prompts";
 import clipboardy from "clipboardy";
@@ -9,11 +10,14 @@ import { createVault, WrongMasterPasswordError, VaultNotInitializedError, ItemNo
 import { nodeCrypto } from "../core/node/crypto.js";
 import { loadSession } from "../core/node/config.js";
 
+const require = createRequire(import.meta.url);
+const pkg = require("../../package.json") as { version: string };
+
 const { generatePassword } = nodeCrypto;
 const { initVault, unlockVault, addItem, getItem, removeItem, listItems } = createVault(nodeCrypto);
 
 const program = new Command();
-program.name("atpass").description("A password manager stored as encrypted records in your atproto (Bluesky) PDS repo.").version("0.1.0");
+program.name("atpass").description("A password manager stored as encrypted records in your atproto (Bluesky) PDS repo.").version(pkg.version);
 
 function fail(message: string): never {
   console.error(`atpass: ${message}`);
