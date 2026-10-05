@@ -8,6 +8,10 @@ A password manager that stores your vault as end-to-end encrypted records in
 your own [atproto](https://atproto.com) (Bluesky) PDS repo, instead of a
 proprietary server. Your PDS operator only ever sees ciphertext.
 
+See [`docs/DESIGN.md`](docs/DESIGN.md) for the full design doc: architecture,
+data model, threat model, and the release pipeline, in more depth than this
+README.
+
 ## How it works
 
 - Every vault item is one record in the `xyz.atpass.vault.item` collection of
