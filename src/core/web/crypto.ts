@@ -1,5 +1,5 @@
 import { argon2id } from "hash-wasm";
-import { assertKdfParams } from "../types.js";
+import { assertKdfParams, SALT_LEN } from "../types.js";
 import type { CryptoAdapter, EncryptedBlob, GeneratePasswordOptions, KdfParams } from "../types.js";
 
 const KEY_LEN = 32; // AES-256
@@ -117,7 +117,7 @@ function generatePassword(opts: GeneratePasswordOptions = {}): string {
 }
 
 export const webCrypto: CryptoAdapter = {
-  newSalt: () => crypto.getRandomValues(new Uint8Array(16)),
+  newSalt: () => crypto.getRandomValues(new Uint8Array(SALT_LEN)),
   deriveVaultKey,
   encryptItem,
   decryptItem,

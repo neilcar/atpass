@@ -6,6 +6,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { nodeCrypto } from "../src/core/node/crypto.js";
 import { webCrypto } from "../src/core/web/crypto.js";
+import { KDF_DEFAULTS } from "../src/core/types.js";
 
 const params = { memoryCost: 65536, timeCost: 3, parallelism: 1 };
 
@@ -39,4 +40,18 @@ test("verifier and rkey derivation match across adapters", async () => {
   assert.equal(await webCrypto.checkVerifier(webKey, v.iv, v.ciphertext), true);
 
   assert.equal(await nodeCrypto.rkeyForName("GitHub.com"), await webCrypto.rkeyForName("github.com "));
+});
+
+test("current defaults (parallelism > 1) derive the same key on both adapters", async () => {
+  const salt = nodeCrypto.newSalt();
+  const nodeKey = await nodeCrypto.deriveVaultKey("hunter2 master", salt, KDF_DEFAULTS);
+  const webKey = await webCrypto.deriveVaultKey("hunter2 master", salt, KDF_DEFAULTS);
+  assert.deepEqual(Buffer.from(nodeKey), Buffer.from(webKey));
+});
+
+test("vaults created before the salt grew to 32 bytes still derive the same key on both adapters", async () => {
+  const legacySalt = new Uint8Array(16).fill(9);
+  const nodeKey = await nodeCrypto.deriveVaultKey("hunter2 master", legacySalt, params);
+  const webKey = await webCrypto.deriveVaultKey("hunter2 master", legacySalt, params);
+  assert.deepEqual(Buffer.from(nodeKey), Buffer.from(webKey));
 });

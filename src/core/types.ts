@@ -4,11 +4,15 @@ export interface KdfParams {
   parallelism: number;
 }
 
+// Used for new vaults only; existing vaults keep the params stored in their meta record.
 export const KDF_DEFAULTS: KdfParams = {
-  memoryCost: 65536, // 64 MiB
-  timeCost: 3,
-  parallelism: 1,
+  memoryCost: 131072, // 128 MiB
+  timeCost: 5,
+  parallelism: 2,
 };
+
+/** Salt length for new vaults. Existing vaults keep their stored (16-byte) salt. */
+export const SALT_LEN = 32;
 
 // Floor for params read back from a vault's meta record, which the PDS (or
 // anyone on the path to it) can rewrite. Kept separate from KDF_DEFAULTS so

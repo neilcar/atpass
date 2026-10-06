@@ -50,7 +50,7 @@ Each vault lives in two record collections in the user's own atproto repo — se
 
 ## Security and threat model
 
-The master password is run through Argon2id (64 MiB memory, 3 iterations, parallelism 1 — above OWASP's minimums) with a per-account random salt, producing a 256-bit key. Each item is encrypted individually with AES-256-GCM: a random 12-byte nonce per item, plus the AAD binding from the data model section above.
+The master password is run through Argon2id (128 MiB memory, 5 iterations, parallelism 2 for new vaults; vaults created earlier keep their stored 64 MiB / 3 / 1, which is still the enforced floor) with a per-account random 32-byte salt (16 bytes for older vaults), producing a 256-bit key. Each item is encrypted individually with AES-256-GCM: a random 12-byte nonce per item, plus the AAD binding from the data model section above.
 
 **Protected against**
 
