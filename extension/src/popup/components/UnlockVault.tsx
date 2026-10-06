@@ -13,6 +13,7 @@ export function UnlockVault({ handle, onUnlocked, onLogout }: { handle?: string;
     try {
       await sendToBackground({ type: "UNLOCK", masterPassword: password });
       onUnlocked();
+      setPassword("");
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {

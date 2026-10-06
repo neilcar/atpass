@@ -32,6 +32,8 @@ export function SetupVault({
       await vault.initVault(agent, pw1);
       const key = await vault.unlockVault(agent, pw1);
       onCreated(key);
+      setPw1("");
+      setPw2("");
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {

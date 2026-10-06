@@ -22,6 +22,8 @@ export function SetupVault({ handle, onCreated, onLogout }: { handle?: string; o
     try {
       await sendToBackground({ type: "INIT_VAULT", masterPassword: pw1 });
       onCreated();
+      setPw1("");
+      setPw2("");
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {

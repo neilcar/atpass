@@ -22,6 +22,7 @@ export function UnlockVault({
     try {
       const key = await vault.unlockVault(agent, password);
       onUnlocked(key);
+      setPassword("");
     } catch (err) {
       if (err instanceof WrongMasterPasswordError) {
         setError("Incorrect master password.");

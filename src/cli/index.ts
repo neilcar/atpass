@@ -33,7 +33,7 @@ async function promptMasterPassword(message = "Master password"): Promise<string
 /** Get an authenticated agent + unlocked vault key, prompting for the master password. */
 async function unlock(): Promise<{ agent: AtpAgent; key: Uint8Array }> {
   const agent = await getAgent();
-  const masterPassword = await promptMasterPassword();
+  let masterPassword = await promptMasterPassword();
   try {
     const key = await unlockVault(agent, masterPassword);
     return { agent, key };
@@ -41,6 +41,23 @@ async function unlock(): Promise<{ agent: AtpAgent; key: Uint8Array }> {
     if (err instanceof WrongMasterPasswordError) fail("incorrect master password");
     if (err instanceof VaultNotInitializedError) fail("no vault yet — run `atpass init` first");
     throw err;
+  } finally {
+    // Drop the only reference so the string can be collected; the byte copy used for key derivation is zeroed in deriveVaultKey.
+    masterPassword = "";
+  }
+}
+
+/** Prompt for a new master password twice and create the vault with it. */
+async function createVaultInteractively(agent: AtpAgent): Promise<void> {
+  let pw1 = await promptMasterPassword("New master password");
+  let pw2 = await promptMasterPassword("Confirm master password");
+  try {
+    if (pw1 !== pw2) fail("master passwords did not match");
+    await initVault(agent, pw1);
+  } finally {
+    // Drop the only references so the strings can be collected; the byte copy used for key derivation is zeroed in deriveVaultKey.
+    pw1 = "";
+    pw2 = "";
   }
 }
 
@@ -71,10 +88,7 @@ program
         initial: true,
       });
       if (doInit) {
-        const pw1 = await promptMasterPassword("New master password");
-        const pw2 = await promptMasterPassword("Confirm master password");
-        if (pw1 !== pw2) fail("master passwords did not match");
-        await initVault(agent, pw1);
+        await createVaultInteractively(agent);
         console.log("Vault created. This master password is never sent anywhere — don't lose it.");
       }
     }
@@ -103,10 +117,7 @@ program
   .description("Create a vault on the currently logged-in account")
   .action(async () => {
     const agent = await getAgent();
-    const pw1 = await promptMasterPassword("New master password");
-    const pw2 = await promptMasterPassword("Confirm master password");
-    if (pw1 !== pw2) fail("master passwords did not match");
-    await initVault(agent, pw1);
+    await createVaultInteractively(agent);
     console.log("Vault created.");
   });
 

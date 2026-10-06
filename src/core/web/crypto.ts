@@ -24,15 +24,21 @@ function b64decode(s: string): Uint8Array<ArrayBuffer> {
 
 async function deriveVaultKey(masterPassword: string, salt: Uint8Array, params: KdfParams): Promise<Uint8Array> {
   assertKdfParams(params);
-  return argon2id({
-    password: masterPassword,
-    salt,
-    iterations: params.timeCost,
-    parallelism: params.parallelism,
-    memorySize: params.memoryCost,
-    hashLength: KEY_LEN,
-    outputType: "binary",
-  });
+  // The string itself can't be wiped (JS strings are immutable), but the UTF-8 copy handed to argon2 can.
+  const passwordBytes = new TextEncoder().encode(masterPassword);
+  try {
+    return await argon2id({
+      password: passwordBytes,
+      salt,
+      iterations: params.timeCost,
+      parallelism: params.parallelism,
+      memorySize: params.memoryCost,
+      hashLength: KEY_LEN,
+      outputType: "binary",
+    });
+  } finally {
+    passwordBytes.fill(0);
+  }
 }
 
 // crypto.subtle wants BufferSource (ArrayBuffer-backed); our keys/bytes are always

@@ -16,14 +16,20 @@ function toBuffer(u: Uint8Array): Buffer {
 
 async function deriveVaultKey(masterPassword: string, salt: Uint8Array, params: KdfParams): Promise<Uint8Array> {
   assertKdfParams(params);
-  return argon2HashRaw(masterPassword, {
-    salt: toBuffer(salt),
-    memoryCost: params.memoryCost,
-    timeCost: params.timeCost,
-    parallelism: params.parallelism,
-    outputLen: KEY_LEN,
-    algorithm: Algorithm.Argon2id,
-  });
+  // The string itself can't be wiped (JS strings are immutable), but the UTF-8 copy handed to argon2 can.
+  const passwordBytes = Buffer.from(masterPassword, "utf8");
+  try {
+    return await argon2HashRaw(passwordBytes, {
+      salt: toBuffer(salt),
+      memoryCost: params.memoryCost,
+      timeCost: params.timeCost,
+      parallelism: params.parallelism,
+      outputLen: KEY_LEN,
+      algorithm: Algorithm.Argon2id,
+    });
+  } finally {
+    passwordBytes.fill(0);
+  }
 }
 
 async function encryptItem(key: Uint8Array, payload: unknown, aad: string): Promise<EncryptedBlob> {
