@@ -60,7 +60,7 @@ The master password is run through Argon2id (128 MiB memory, 5 iterations, paral
 
 **Not protected against**
 
-- A weak or reused master password — only a client-side length check (≥8 characters), no breach-list check or strength meter.
+- A reused or breached master password — new vaults reject guessable passwords (zxcvbn score below 3, checked locally in `initVault`), but there's no breach-list check, and vaults created before that check aren't re-tested.
 - A compromised local machine while the vault is unlocked (keylogger, malware reading process memory, a malicious browser extension sharing the page).
 - Theft of the atproto session token itself (see below) — it's a bearer credential for the whole repo, not scoped to the vault.
 
