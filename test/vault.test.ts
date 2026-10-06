@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { createVault, WrongMasterPasswordError, ItemNotFoundError } from "../src/core/vault.js";
+import { createVault, WrongMasterPasswordError, WeakKdfParamsError, ItemNotFoundError } from "../src/core/vault.js";
 import { nodeCrypto } from "../src/core/node/crypto.js";
 
 /** Minimal in-memory fake of the subset of Agent used by src/core/records.ts. */
@@ -79,4 +79,33 @@ test("full vault lifecycle: init, unlock, add, get, list, update, remove", async
 
   await vault.removeItem(agent, "example.com");
   assert.equal((await vault.listItems(agent, key)).length, 1);
+});
+
+test("unlockVault rejects a meta record whose KDF params were weakened, before deriving anything", async () => {
+  let deriveCalls = 0;
+  const vault = createVault({
+    ...nodeCrypto,
+    deriveVaultKey: (...args) => {
+      deriveCalls++;
+      return nodeCrypto.deriveVaultKey(...args);
+    },
+  });
+  const agent = makeFakeAgent();
+  await vault.initVault(agent, "correct horse battery staple");
+
+  // Simulate a malicious PDS rewriting the record to make key derivation cheap.
+  const repo = { repo: agent.assertDid, collection: "xyz.atpass.vault.meta", rkey: "self" };
+  const { data } = await agent.com.atproto.repo.getRecord(repo);
+  const intact = data.value;
+  await agent.com.atproto.repo.putRecord({ ...repo, record: { ...intact, kdfParams: { memoryCost: 1, timeCost: 1, parallelism: 1 } } });
+
+  const callsBefore = deriveCalls;
+  const err = await vault.unlockVault(agent, "correct horse battery staple").catch((e: unknown) => e);
+  assert.ok(err instanceof WeakKdfParamsError, `expected WeakKdfParamsError, got ${err}`);
+  assert.ok(!(err instanceof WrongMasterPasswordError));
+  assert.equal(deriveCalls, callsBefore, "key derivation must not run with the tampered params");
+
+  // Restoring the real record makes the same password work again.
+  await agent.com.atproto.repo.putRecord({ ...repo, record: intact });
+  assert.ok((await vault.unlockVault(agent, "correct horse battery staple")).length === 32);
 });
