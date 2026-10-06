@@ -8,6 +8,7 @@ import { getAgent, login as atpLogin, logout as atpLogout, DEFAULT_SERVICE } fro
 import { getVaultMeta } from "../core/records.js";
 import { createVault, WrongMasterPasswordError, VaultNotInitializedError, ItemNotFoundError } from "../core/vault.js";
 import { nodeCrypto } from "../core/node/crypto.js";
+import { accountUserInputs, validatePasswordStrength } from "../core/passwordValidator.js";
 import { loadSession } from "../core/node/config.js";
 
 const require = createRequire(import.meta.url);
@@ -47,9 +48,16 @@ async function unlock(): Promise<{ agent: AtpAgent; key: Uint8Array }> {
   }
 }
 
-/** Prompt for a new master password twice and create the vault with it. */
+/** Prompt for a new master password (re-prompting until it's strong enough), confirm it, and create the vault with it. */
 async function createVaultInteractively(agent: AtpAgent): Promise<void> {
+  const userInputs = accountUserInputs(agent.assertDid, agent.session?.handle);
   let pw1 = await promptMasterPassword("New master password");
+  for (;;) {
+    const strength = await validatePasswordStrength(pw1, userInputs);
+    if (strength.valid) break;
+    console.error(strength.feedback);
+    pw1 = await promptMasterPassword("New master password");
+  }
   let pw2 = await promptMasterPassword("Confirm master password");
   try {
     if (pw1 !== pw2) fail("master passwords did not match");

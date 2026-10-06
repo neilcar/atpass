@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { vault } from "../lib/vaultClient";
+import { accountUserInputs, validatePasswordStrength } from "@core/passwordValidator.js";
 import type { Agent } from "../lib/vaultClient";
 
 export function SetupVault({
@@ -15,12 +16,14 @@ export function SetupVault({
   const [pw2, setPw2] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const handleInputs = accountUserInputs(agent.assertDid, agent.session?.handle);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
-    if (pw1.length < 8) {
-      setError("Use at least 8 characters.");
+    const strength = await validatePasswordStrength(pw1, handleInputs);
+    if (!strength.valid) {
+      setError(strength.feedback);
       return;
     }
     if (pw1 !== pw2) {

@@ -12,8 +12,9 @@ import {
 import type { CryptoAdapter, ItemPayload } from "./types.js";
 import { KDF_DEFAULTS, WeakKdfParamsError, assertKdfParams } from "./types.js";
 import { SchemaValidationError } from "./schemas.js";
+import { accountUserInputs, validatePasswordStrength, WeakMasterPasswordError } from "./passwordValidator.js";
 
-export { WeakKdfParamsError, SchemaValidationError };
+export { WeakKdfParamsError, SchemaValidationError, WeakMasterPasswordError };
 
 export class WrongMasterPasswordError extends Error {
   constructor() {
@@ -69,8 +70,16 @@ export function createVault(crypto: CryptoAdapter) {
     return (await getVaultMeta(agent)) !== null;
   }
 
-  /** Create the vault meta record for a fresh account. Throws VaultAlreadyExistsError if one exists. */
+  /**
+   * Create the vault meta record for a fresh account. Throws VaultAlreadyExistsError if one exists, or
+   * WeakMasterPasswordError if the master password is too guessable — enforced here so every client gets the same check.
+   */
   async function initVault(agent: Agent, masterPassword: string): Promise<void> {
+    const strength = await validatePasswordStrength(
+      masterPassword,
+      accountUserInputs(agent.assertDid, (agent as { session?: { handle?: string } }).session?.handle),
+    );
+    if (!strength.valid) throw new WeakMasterPasswordError(strength.feedback, strength.score);
     const existing = await getVaultMeta(agent);
     if (existing) throw new VaultAlreadyExistsError();
     const salt = crypto.newSalt();
