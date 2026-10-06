@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { createVault, WrongMasterPasswordError, WeakKdfParamsError, ItemNotFoundError } from "../src/core/vault.js";
+import { createVault, WrongMasterPasswordError, WeakKdfParamsError, ItemNotFoundError, SchemaValidationError } from "../src/core/vault.js";
 import { nodeCrypto } from "../src/core/node/crypto.js";
 
 /** Minimal in-memory fake of the subset of Agent used by src/core/records.ts. */
@@ -108,4 +108,50 @@ test("unlockVault rejects a meta record whose KDF params were weakened, before d
   // Restoring the real record makes the same password work again.
   await agent.com.atproto.repo.putRecord({ ...repo, record: intact });
   assert.ok((await vault.unlockVault(agent, "correct horse battery staple")).length === 32);
+});
+
+test("malformed records from the PDS are rejected with SchemaValidationError instead of being trusted", async () => {
+  const vault = createVault(nodeCrypto);
+  const agent = makeFakeAgent();
+  await vault.initVault(agent, "correct horse battery staple");
+  const key = await vault.unlockVault(agent, "correct horse battery staple");
+  await vault.addItem(agent, key, { title: "github.com", password: "hunter2" });
+
+  const metaRef = { repo: agent.assertDid, collection: "xyz.atpass.vault.meta", rkey: "self" };
+  const intactMeta = (await agent.com.atproto.repo.getRecord(metaRef)).data.value;
+  for (const bad of [
+    { ...intactMeta, kdf: "pbkdf2" },
+    { ...intactMeta, kdfParams: { ...intactMeta.kdfParams, memoryCost: "131072" } },
+    { ...intactMeta, verifierIv: undefined },
+    { ...intactMeta, createdAt: "yesterday" },
+  ]) {
+    await agent.com.atproto.repo.putRecord({ ...metaRef, record: bad });
+    await assert.rejects(() => vault.unlockVault(agent, "correct horse battery staple"), SchemaValidationError, JSON.stringify(bad));
+  }
+  await agent.com.atproto.repo.putRecord({ ...metaRef, record: intactMeta });
+
+  const { records } = (await agent.com.atproto.repo.listRecords({ collection: "xyz.atpass.vault.item" })).data;
+  const itemRef = { repo: agent.assertDid, collection: "xyz.atpass.vault.item", rkey: records[0].uri.split("/").pop() };
+  await agent.com.atproto.repo.putRecord({ ...itemRef, record: { ...records[0].value, alg: "none" } });
+  await assert.rejects(() => vault.getItem(agent, key, "github.com"), SchemaValidationError);
+  await assert.rejects(() => vault.listItems(agent, key), SchemaValidationError);
+});
+
+test("a malformed item record can still be overwritten or deleted", async () => {
+  const vault = createVault(nodeCrypto);
+  const agent = makeFakeAgent();
+  await vault.initVault(agent, "correct horse battery staple");
+  const key = await vault.unlockVault(agent, "correct horse battery staple");
+  await vault.addItem(agent, key, { title: "github.com", password: "hunter2" });
+  await vault.addItem(agent, key, { title: "example.com", password: "s3cret" });
+
+  const { records } = (await agent.com.atproto.repo.listRecords({ collection: "xyz.atpass.vault.item" })).data;
+  for (const r of records) {
+    await agent.com.atproto.repo.putRecord({ collection: "xyz.atpass.vault.item", rkey: r.uri.split("/").pop(), record: { garbage: true } });
+  }
+
+  await vault.addItem(agent, key, { title: "github.com", password: "fixed" });
+  assert.equal((await vault.getItem(agent, key, "github.com")).password, "fixed");
+  await vault.removeItem(agent, "example.com");
+  assert.deepEqual((await vault.listItems(agent, key)).map((e) => e.title), ["github.com"]);
 });

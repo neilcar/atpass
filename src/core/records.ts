@@ -1,4 +1,5 @@
 import type { Agent } from "@atproto/api";
+import { VaultMetaRecordSchema, ItemRecordSchema, parseRecord } from "./schemas.js";
 
 export const META_COLLECTION = "xyz.atpass.vault.meta";
 export const META_RKEY = "self";
@@ -19,17 +20,19 @@ function isNotFound(err: any): boolean {
 }
 
 export async function getVaultMeta(agent: Agent): Promise<VaultMetaRecord | null> {
+  let value: unknown;
   try {
     const res = await agent.com.atproto.repo.getRecord({
       repo: agent.assertDid,
       collection: META_COLLECTION,
       rkey: META_RKEY,
     });
-    return res.data.value as unknown as VaultMetaRecord;
+    value = res.data.value;
   } catch (err: any) {
     if (isNotFound(err)) return null;
     throw err;
   }
+  return parseRecord(VaultMetaRecordSchema, value, "Failed to validate vault metadata from PDS");
 }
 
 export async function putVaultMeta(agent: Agent, meta: Omit<VaultMetaRecord, "$type">): Promise<void> {
@@ -62,17 +65,19 @@ export async function putItemRecord(agent: Agent, rkey: string, record: Omit<Ite
 }
 
 export async function getItemRecord(agent: Agent, rkey: string): Promise<ItemRecord | null> {
+  let value: unknown;
   try {
     const res = await agent.com.atproto.repo.getRecord({
       repo: agent.assertDid,
       collection: ITEM_COLLECTION,
       rkey,
     });
-    return res.data.value as unknown as ItemRecord;
+    value = res.data.value;
   } catch (err: any) {
     if (isNotFound(err)) return null;
     throw err;
   }
+  return parseRecord(ItemRecordSchema, value, "Failed to validate vault item from PDS");
 }
 
 export async function deleteItemRecord(agent: Agent, rkey: string): Promise<void> {
@@ -101,7 +106,8 @@ export async function listItemRecords(agent: Agent): Promise<ListedItem[]> {
     });
     for (const r of res.data.records) {
       const rkey = r.uri.split("/").pop()!;
-      items.push({ rkey, uri: r.uri, record: r.value as unknown as ItemRecord });
+      // Throws on the first malformed record rather than skipping it, so corruption or tampering isn't silently hidden.
+      items.push({ rkey, uri: r.uri, record: parseRecord(ItemRecordSchema, r.value, `Failed to validate vault item ${rkey} from PDS`) });
     }
     cursor = res.data.cursor;
   } while (cursor);

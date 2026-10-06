@@ -11,8 +11,9 @@ import {
 } from "./records.js";
 import type { CryptoAdapter, ItemPayload } from "./types.js";
 import { KDF_DEFAULTS, WeakKdfParamsError, assertKdfParams } from "./types.js";
+import { SchemaValidationError } from "./schemas.js";
 
-export { WeakKdfParamsError };
+export { WeakKdfParamsError, SchemaValidationError };
 
 export class WrongMasterPasswordError extends Error {
   constructor() {
@@ -49,6 +50,19 @@ export interface VaultListEntry {
 export function createVault(crypto: CryptoAdapter) {
   function itemAad(rkey: string): string {
     return `${ITEM_COLLECTION}/${rkey}`;
+  }
+
+  /**
+   * For add/remove, which only need to know whether a record is there: a malformed record counts as present but
+   * unreadable, so the user can still overwrite or delete it rather than being stuck with it.
+   */
+  async function getItemRecordForWrite(agent: Agent, rkey: string): Promise<{ createdAt?: string } | null> {
+    try {
+      return await getItemRecord(agent, rkey);
+    } catch (err) {
+      if (err instanceof SchemaValidationError) return {};
+      throw err;
+    }
   }
 
   async function hasVault(agent: Agent): Promise<boolean> {
@@ -92,7 +106,7 @@ export function createVault(crypto: CryptoAdapter) {
 
   async function addItem(agent: Agent, key: Uint8Array, payload: ItemPayload): Promise<void> {
     const rkey = await crypto.rkeyForName(payload.title);
-    const existing = await getItemRecord(agent, rkey);
+    const existing = await getItemRecordForWrite(agent, rkey);
     const { iv, ciphertext } = await crypto.encryptItem(key, payload, itemAad(rkey));
     const now = new Date().toISOString();
     await putItemRecord(agent, rkey, {
@@ -113,7 +127,7 @@ export function createVault(crypto: CryptoAdapter) {
 
   async function removeItem(agent: Agent, name: string): Promise<void> {
     const rkey = await crypto.rkeyForName(name);
-    const existing = await getItemRecord(agent, rkey);
+    const existing = await getItemRecordForWrite(agent, rkey);
     if (!existing) throw new ItemNotFoundError(name);
     await deleteItemRecord(agent, rkey);
   }
