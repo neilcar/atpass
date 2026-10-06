@@ -20,7 +20,11 @@ COPY src ./src
 COPY web ./web
 RUN npm run build --workspace web
 
-FROM nginx:1.27-alpine
+# -slim (no image-filter module, so no libpng/tiff/freetype/etc.) is all a
+# static-file server needs, and nginx 1.27 is EOL; this tracks the stable line.
+FROM nginx:1.30-alpine-slim
+# Pick up Alpine security fixes published since the base image was built.
+RUN apk upgrade --no-cache
 COPY web/nginx.conf /etc/nginx/conf.d/default.conf
 COPY --from=build /app/web/dist /usr/share/nginx/html
 EXPOSE 80
