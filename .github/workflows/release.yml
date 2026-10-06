@@ -54,7 +54,8 @@ jobs:
   docker-build-check:
     # Build-only (no push, no Docker Hub credentials needed), so a broken
     # web/Dockerfile is caught on every push/PR instead of only at release
-    # time when the `docker` job below actually pushes it.
+    # time when the `docker` job below actually pushes it. The image is
+    # loaded into the local daemon so Grype can scan what was just built.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -64,6 +65,21 @@ jobs:
           context: .
           file: web/Dockerfile
           push: false
+          load: true
+          tags: atpass-web:scan
+
+      - name: Install Grype
+        id: grype
+        uses: anchore/scan-action/download-grype@v7
+
+      # Report-only: prints every finding (all severities, including ones with
+      # no fix yet) as a table and never fails the job. --by-cve reports CVE
+      # IDs rather than GHSA/other aliases wherever a CVE exists. To gate
+      # builds on severity instead, add e.g. `--fail-on high`.
+      - name: Scan image for vulnerabilities (Grype)
+        env:
+          GRYPE: ${{ steps.grype.outputs.cmd }}
+        run: '"$GRYPE" docker:atpass-web:scan --by-cve -o table'
 
   release:
     needs: test
@@ -157,6 +173,7 @@ jobs:
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Build and push
+        id: build
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -165,3 +182,22 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+
+      - name: Install Grype
+        id: grype
+        uses: anchore/scan-action/download-grype@v7
+
+      # Scans the exact image that was just pushed (by digest, so a concurrent
+      # push can't change what's scanned), once per platform since the
+      # arm64 and amd64 images have different packages. Report-only, same as
+      # in docker-build-check: every finding is printed as a CVE table and the
+      # job doesn't fail on them. Grype picks up the Docker Hub login above.
+      - name: Scan pushed image for vulnerabilities (Grype)
+        env:
+          GRYPE: ${{ steps.grype.outputs.cmd }}
+          IMAGE: ${{ vars.DOCKERHUB_USERNAME }}/atpass-web@${{ steps.build.outputs.digest }}
+        run: |
+          for platform in linux/amd64 linux/arm64; do
+            echo "=== Grype scan: $platform ==="
+            "$GRYPE" "registry:$IMAGE" --platform "$platform" --by-cve -o table
+          done
