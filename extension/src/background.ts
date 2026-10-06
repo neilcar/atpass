@@ -131,6 +131,7 @@ async function handle(req: Request): Promise<unknown> {
     }
 
     case "DELETE_ITEM": {
+      if (!vaultKey) throw new Error("Vault is locked.");
       const agent = await getAgentOrThrow();
       await vault.removeItem(agent, req.title);
       return;
