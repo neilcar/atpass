@@ -1,7 +1,23 @@
 import { useState } from "react";
 import { sendToBackground } from "../../lib/messages";
+import type { LockReason } from "../../lib/messages";
 
-export function UnlockVault({ handle, onUnlocked, onLogout }: { handle?: string; onUnlocked: () => void; onLogout: () => void }) {
+const LOCK_NOTICES: Record<LockReason, string> = {
+  idle: "Locked automatically after 5 minutes without vault activity.",
+  suspended: "Locked because Firefox unloaded atpass's background page while it was idle.",
+};
+
+export function UnlockVault({
+  handle,
+  lockReason,
+  onUnlocked,
+  onLogout,
+}: {
+  handle?: string;
+  lockReason?: LockReason;
+  onUnlocked: () => void;
+  onLogout: () => void;
+}) {
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -32,6 +48,7 @@ export function UnlockVault({ handle, onUnlocked, onLogout }: { handle?: string;
       <p className="subtitle">
         Signed in as <strong>{handle}</strong>
       </p>
+      {lockReason && <p className="hint">{LOCK_NOTICES[lockReason]}</p>}
       <form onSubmit={handleSubmit} className="form">
         <label>
           Master password

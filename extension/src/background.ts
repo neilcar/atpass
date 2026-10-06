@@ -2,16 +2,95 @@ import type { AtpAgent } from "@atproto/api";
 import { createVault, ItemNotFoundError } from "@core/vault.js";
 import { webCrypto } from "@core/web/crypto.js";
 import { getAgent as resumeAgent, login as doLogin, logout as doLogout, DEFAULT_SERVICE } from "./lib/extSession.js";
-import type { Request, Reply, StatusResponse } from "./lib/messages.js";
+import type { LockReason, Request, Reply, StatusResponse } from "./lib/messages.js";
 
 const vault = createVault(webCrypto);
 
 // The derived vault key lives ONLY here, in the background script's memory —
 // never sent to the popup, never persisted. If Firefox suspends this
 // (idle) event page, the key is gone and the user re-unlocks; that's
-// intentional, not a bug.
+// intentional, not a bug. It's also dropped after IDLE_LOCK_MS without a
+// vault operation, and the unlock screen says which of the two happened.
 let vaultKey: Uint8Array | null = null;
 let cachedAgent: AtpAgent | null = null;
+
+// Lock after this long without a vault operation, even if Firefox keeps the background page alive.
+const IDLE_LOCK_MS = 5 * 60 * 1000;
+// Set in storage.session while unlocked, so a background page that starts fresh can tell the user the vault was locked
+// by a suspension rather than by them. storage.session lives in memory, is cleared on browser restart, and holds no secret.
+const UNLOCKED_FLAG = "atpass.wasUnlocked";
+
+let lockReason: LockReason | null = null;
+let idleTimer: ReturnType<typeof setTimeout> | null = null;
+
+function armIdleTimer(): void {
+  if (idleTimer) clearTimeout(idleTimer);
+  idleTimer = setTimeout(() => void lock("idle").catch(() => {}), IDLE_LOCK_MS);
+}
+
+async function setUnlocked(key: Uint8Array): Promise<void> {
+  if (vaultKey !== key) wipeKey();
+  vaultKey = key;
+  lockReason = null;
+  armIdleTimer();
+  await browser.storage.session.set({ [UNLOCKED_FLAG]: true });
+}
+
+/** Drop the vault key. `reason` is shown on the unlock screen; null means the user locked or logged out themselves. */
+/** Zero the key bytes before dropping the reference, so they don't linger in memory until GC. */
+function wipeKey(): void {
+  vaultKey?.fill(0);
+  vaultKey = null;
+}
+
+async function lock(reason: LockReason | null): Promise<void> {
+  wipeKey();
+  lockReason = reason;
+  if (idleTimer) clearTimeout(idleTimer);
+  idleTimer = null;
+  // Awaited so a STATUS right after a manual lock can't still see the flag and misreport it as a suspension.
+  await browser.storage.session.remove(UNLOCKED_FLAG);
+}
+
+// Tail of the queue of operations using the key; see withKey.
+let keyQueue: Promise<unknown> = Promise.resolve();
+
+/**
+ * Throw unless unlocked; otherwise count this as activity for the idle lock and run `fn` with a private copy of the key,
+ * wiped when `fn` settles. The copy matters: a lock that fires mid-operation wipes vaultKey in place, and an operation
+ * still holding that same buffer would go on to encrypt with an all-zero key. Operations run one at a time, so at most
+ * one copy exists besides vaultKey itself; one that was queued when a lock fired fails rather than running.
+ */
+function withKey<T>(fn: (key: Uint8Array) => Promise<T>): Promise<T> {
+  if (!vaultKey) return Promise.reject(new Error("Vault is locked."));
+  armIdleTimer();
+  const run = keyQueue.then(async () => {
+    if (!vaultKey) throw new Error("Vault is locked.");
+    const key = vaultKey.slice();
+    try {
+      return await fn(key);
+    } finally {
+      key.fill(0);
+    }
+  });
+  keyQueue = run.catch(() => {});
+  return run;
+}
+
+/** If a previous instance of this page was unlocked when it went away, this instance starts locked: say so once. */
+async function detectSuspendedLock(): Promise<void> {
+  if (vaultKey || lockReason) return;
+  const stored = await browser.storage.session.get(UNLOCKED_FLAG);
+  // Re-check after the await: an UNLOCK that finished meanwhile sets the same flag and must not be locked again.
+  if (stored[UNLOCKED_FLAG] && !vaultKey && !lockReason) await lock("suspended");
+}
+
+// Firefox fires this before unloading an idle event page. The key would vanish with the page anyway; this makes it
+// explicit. The storage.session flag is left set so the next instance can report the suspension.
+browser.runtime.onSuspend.addListener(() => {
+  wipeKey();
+  if (idleTimer) clearTimeout(idleTimer);
+});
 
 async function getAgentOrThrow(): Promise<AtpAgent> {
   if (!cachedAgent) cachedAgent = await resumeAgent();
@@ -23,9 +102,10 @@ async function status(): Promise<StatusResponse> {
   const agent = await resumeAgent();
   cachedAgent = agent;
   if (!agent) {
-    vaultKey = null;
+    await lock(null);
     return { loggedIn: false, hasVault: false, unlocked: false };
   }
+  await detectSuspendedLock();
   const hasVault = await vault.hasVault(agent);
   return {
     loggedIn: true,
@@ -33,6 +113,7 @@ async function status(): Promise<StatusResponse> {
     service: agent.serviceUrl.toString(),
     hasVault,
     unlocked: vaultKey !== null,
+    lockReason: vaultKey ? undefined : (lockReason ?? undefined),
   };
 }
 
@@ -82,58 +163,54 @@ async function handle(req: Request): Promise<unknown> {
 
     case "LOGIN": {
       cachedAgent = await doLogin(req.service || DEFAULT_SERVICE, req.identifier, req.appPassword);
-      vaultKey = null;
+      await lock(null);
       return;
     }
 
     case "LOGOUT": {
       await doLogout();
       cachedAgent = null;
-      vaultKey = null;
+      await lock(null);
       return;
     }
 
     case "INIT_VAULT": {
       const agent = await getAgentOrThrow();
       await vault.initVault(agent, req.masterPassword);
-      vaultKey = await vault.unlockVault(agent, req.masterPassword);
+      await setUnlocked(await vault.unlockVault(agent, req.masterPassword));
       return;
     }
 
     case "UNLOCK": {
       const agent = await getAgentOrThrow();
-      vaultKey = await vault.unlockVault(agent, req.masterPassword);
+      await setUnlocked(await vault.unlockVault(agent, req.masterPassword));
       return;
     }
 
     case "LOCK": {
-      vaultKey = null;
+      await lock(null);
       return;
     }
 
     case "LIST_ITEMS": {
       const agent = await getAgentOrThrow();
-      if (!vaultKey) throw new Error("Vault is locked.");
-      return vault.listItems(agent, vaultKey);
+      return withKey((key) => vault.listItems(agent, key));
     }
 
     case "GET_ITEM": {
       const agent = await getAgentOrThrow();
-      if (!vaultKey) throw new Error("Vault is locked.");
-      return vault.getItem(agent, vaultKey, req.title);
+      return withKey((key) => vault.getItem(agent, key, req.title));
     }
 
     case "SAVE_ITEM": {
       const agent = await getAgentOrThrow();
-      if (!vaultKey) throw new Error("Vault is locked.");
-      await vault.addItem(agent, vaultKey, req.payload);
+      await withKey((key) => vault.addItem(agent, key, req.payload));
       return;
     }
 
     case "DELETE_ITEM": {
-      if (!vaultKey) throw new Error("Vault is locked.");
       const agent = await getAgentOrThrow();
-      await vault.removeItem(agent, req.title);
+      await withKey(() => vault.removeItem(agent, req.title));
       return;
     }
 
@@ -143,10 +220,9 @@ async function handle(req: Request): Promise<unknown> {
 
     case "FILL_ACTIVE_TAB": {
       const agent = await getAgentOrThrow();
-      if (!vaultKey) throw new Error("Vault is locked.");
       let item;
       try {
-        item = await vault.getItem(agent, vaultKey, req.title);
+        item = await withKey((key) => vault.getItem(agent, key, req.title));
       } catch (err) {
         if (err instanceof ItemNotFoundError) throw err;
         throw err;
