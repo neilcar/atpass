@@ -27,8 +27,8 @@ README.
   which encrypts each item with AES-256-GCM (unique nonce per item, record
   key bound in as additional authenticated data so records can't be swapped).
 - Locally, only your atproto session tokens are cached (`~/.atpass/session.json`
-  for the CLI, `localStorage` for the web app), so you don't have to log in
-  every time. Nothing about the master password or vault key is ever persisted.
+  for the CLI, the tab's `sessionStorage` for the web app), so you don't have to
+  log in for every command or page load. Nothing about the master password or vault key is ever persisted.
 - Both clients share one crypto core: Argon2id key derivation and AES-256-GCM
   encryption are implemented once for Node (`node:crypto` + `@node-rs/argon2`)
   and once for the browser (Web Crypto API + `hash-wasm`'s WASM argon2id),
@@ -186,7 +186,7 @@ Design notes:
   There's no local vault caching, so a network failure just fails the
   command — nothing is left half-written locally.
 - The cached atproto session tokens (`~/.atpass/session.json` for the CLI,
-  `localStorage` for the web app, `browser.storage.local` for the extension)
+  `sessionStorage` for the web app, `browser.storage.local` for the extension)
   are bearer credentials for your atproto account's repo (read/write to all
   your atproto data), scoped by whatever an App Password grants. Treat the
   CLI's file like any other CLI auth token cache (e.g. `~/.aws/credentials`,
@@ -214,7 +214,7 @@ src/core/
   records.ts     platform-agnostic atproto record CRUD (no fs/os — safe for browser/extension bundles)
   vault.ts       vault logic (init/unlock/add/get/list/remove), takes a CryptoAdapter
   node/          Node crypto (node:crypto + @node-rs/argon2), session (fs-cached), used by the CLI
-  web/           browser crypto (Web Crypto API + hash-wasm), session (localStorage), used by web/ and extension/
+  web/           browser crypto (Web Crypto API + hash-wasm), session (sessionStorage), used by web/ and extension/
 src/cli/         commander-based CLI on top of src/core/node
 web/             Vite + React web app on top of src/core/web, aliased as @core
 extension/       Firefox MV3 extension (background + popup) on top of src/core/web, aliased as @core

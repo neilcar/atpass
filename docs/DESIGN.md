@@ -69,7 +69,7 @@ The master password is run through Argon2id (128 MiB memory, 5 iterations, paral
 | Client | Storage | Isolation |
 | --- | --- | --- |
 | CLI | `~/.atpass/session.json` | File permissions (`chmod 600`) |
-| Web app | `localStorage` | None from same-origin JS — readable by an XSS bug or a rogue browser extension |
+| Web app | `sessionStorage` (per tab, cleared when it closes) | None from same-origin JS — readable by an XSS bug (the CSP limits script to the app's own origin) or a rogue browser extension |
 | Firefox extension | `browser.storage.local` | Extension sandbox — not reachable from page JavaScript at all |
 
 **Why the master password is independent of the atproto login**: an App Password lets someone read/write the account's whole repo; the master password is the only thing that can decrypt vault contents. A leaked App Password lets an attacker see ciphertext and delete records — not read a single password. Neither secret, alone, compromises the other.
@@ -103,7 +103,7 @@ Two implementations satisfy it: `src/core/node/crypto.ts` (`node:crypto` for AES
 
 - Vite + React, genuinely client-only — no server component at all. The [Docker image](#releasing) just serves the built static files via nginx; there's nothing to configure or trust beyond the PDS itself.
 - Talks to the PDS directly from the browser via `com.atproto.server.createSession` (the same CORS-friendly XRPC calls the CLI makes), relying on the PDS's own CORS headers rather than any proxy of ours.
-- The vault key lives in a React state variable scoped to the tab; closing the tab or clicking Lock clears it. It's never written to `localStorage` or `IndexedDB` — only the atproto session token is.
+- The vault key lives in a React state variable scoped to the tab; closing the tab or clicking Lock clears it. It's never written to browser storage — only the atproto session token is, in the tab's `sessionStorage`.
 
 ### Firefox extension
 
