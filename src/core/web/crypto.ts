@@ -1,4 +1,5 @@
 import { argon2id } from "hash-wasm";
+import { assertKdfParams } from "../types.js";
 import type { CryptoAdapter, EncryptedBlob, GeneratePasswordOptions, KdfParams } from "../types.js";
 
 const KEY_LEN = 32; // AES-256
@@ -22,6 +23,7 @@ function b64decode(s: string): Uint8Array<ArrayBuffer> {
 }
 
 async function deriveVaultKey(masterPassword: string, salt: Uint8Array, params: KdfParams): Promise<Uint8Array> {
+  assertKdfParams(params);
   return argon2id({
     password: masterPassword,
     salt,

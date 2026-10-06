@@ -10,6 +10,39 @@ export const KDF_DEFAULTS: KdfParams = {
   parallelism: 1,
 };
 
+// Floor for params read back from a vault's meta record, which the PDS (or
+// anyone on the path to it) can rewrite. Kept separate from KDF_DEFAULTS so
+// raising the defaults for new vaults later doesn't lock out existing ones.
+export const KDF_MINIMUMS: Readonly<KdfParams> = {
+  memoryCost: 65536,
+  timeCost: 3,
+  parallelism: 1,
+};
+
+export class WeakKdfParamsError extends Error {
+  readonly fields: string[];
+
+  constructor(fields: string[]) {
+    super(
+      `Vault key-derivation parameters (${fields.join(", ")}) are missing or below the required minimum ` +
+        `(memoryCost ${KDF_MINIMUMS.memoryCost} KiB, timeCost ${KDF_MINIMUMS.timeCost}, parallelism ${KDF_MINIMUMS.parallelism}). ` +
+        "The vault's metadata record may have been tampered with; refusing to derive a key from it.",
+    );
+    this.name = "WeakKdfParamsError";
+    this.fields = fields;
+  }
+}
+
+/** Throws WeakKdfParamsError unless every param is an integer at or above its minimum. Both crypto adapters and unlockVault call this, so the floor is identical on every platform. */
+export function assertKdfParams(params: unknown): asserts params is KdfParams {
+  const p = (typeof params === "object" && params !== null ? params : {}) as Record<string, unknown>;
+  const bad = (Object.keys(KDF_MINIMUMS) as (keyof KdfParams)[]).filter((field) => {
+    const v = p[field];
+    return typeof v !== "number" || !Number.isInteger(v) || v < KDF_MINIMUMS[field];
+  });
+  if (bad.length > 0) throw new WeakKdfParamsError(bad);
+}
+
 export interface EncryptedBlob {
   iv: string;
   ciphertext: string;

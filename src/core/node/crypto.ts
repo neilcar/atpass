@@ -1,5 +1,6 @@
 import { randomBytes, randomInt, createCipheriv, createDecipheriv, timingSafeEqual, createHash } from "node:crypto";
 import { hashRaw as argon2HashRaw, Algorithm } from "@node-rs/argon2";
+import { assertKdfParams } from "../types.js";
 import type { CryptoAdapter, EncryptedBlob, GeneratePasswordOptions, KdfParams } from "../types.js";
 
 const KEY_LEN = 32; // AES-256
@@ -14,6 +15,7 @@ function toBuffer(u: Uint8Array): Buffer {
 }
 
 async function deriveVaultKey(masterPassword: string, salt: Uint8Array, params: KdfParams): Promise<Uint8Array> {
+  assertKdfParams(params);
   return argon2HashRaw(masterPassword, {
     salt: toBuffer(salt),
     memoryCost: params.memoryCost,

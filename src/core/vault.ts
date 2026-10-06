@@ -10,7 +10,9 @@ import {
   ITEM_COLLECTION,
 } from "./records.js";
 import type { CryptoAdapter, ItemPayload } from "./types.js";
-import { KDF_DEFAULTS } from "./types.js";
+import { KDF_DEFAULTS, WeakKdfParamsError, assertKdfParams } from "./types.js";
+
+export { WeakKdfParamsError };
 
 export class WrongMasterPasswordError extends Error {
   constructor() {
@@ -70,10 +72,16 @@ export function createVault(crypto: CryptoAdapter) {
     });
   }
 
-  /** Derive and verify the vault key for an existing vault. Throws WrongMasterPasswordError / VaultNotInitializedError. */
+  /**
+   * Derive and verify the vault key for an existing vault. Throws WrongMasterPasswordError / VaultNotInitializedError,
+   * or WeakKdfParamsError if the meta record's KDF params fall below the minimum (the record is PDS-controlled, so a
+   * tampered one could otherwise make key derivation cheap). It rejects rather than substituting defaults, because
+   * defaults would derive a different key and be misreported as a wrong password, hiding the tampering.
+   */
   async function unlockVault(agent: Agent, masterPassword: string): Promise<Uint8Array> {
     const meta = await getVaultMeta(agent);
     if (!meta) throw new VaultNotInitializedError();
+    assertKdfParams(meta.kdfParams);
     const salt = atobBytes(meta.salt);
     const key = await crypto.deriveVaultKey(masterPassword, salt, meta.kdfParams);
     if (!(await crypto.checkVerifier(key, meta.verifierIv, meta.verifier))) {
