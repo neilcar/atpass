@@ -74,10 +74,21 @@ async function makeVerifier(key: Uint8Array): Promise<EncryptedBlob> {
   return encryptItem(key, VERIFIER_PLAINTEXT, VERIFIER_AAD);
 }
 
+/** Compares equal-length byte arrays without exiting early on the first mismatch. */
+function timingSafeEqual(a: Uint8Array, b: Uint8Array): boolean {
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) diff |= a[i] ^ b[i];
+  return diff === 0;
+}
+
 async function checkVerifier(key: Uint8Array, iv: string, ciphertext: string): Promise<boolean> {
   try {
-    const decoded = await decryptItem<string>(key, iv, ciphertext, VERIFIER_AAD);
-    return decoded === VERIFIER_PLAINTEXT;
+    const decoded = await decryptItem<unknown>(key, iv, ciphertext, VERIFIER_AAD);
+    if (typeof decoded !== "string") return false;
+    const a = new TextEncoder().encode(decoded);
+    const b = new TextEncoder().encode(VERIFIER_PLAINTEXT);
+    return timingSafeEqual(a, b);
   } catch {
     return false;
   }

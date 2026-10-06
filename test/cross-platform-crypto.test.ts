@@ -55,3 +55,16 @@ test("vaults created before the salt grew to 32 bytes still derive the same key 
   const webKey = await webCrypto.deriveVaultKey("hunter2 master", legacySalt, params);
   assert.deepEqual(Buffer.from(nodeKey), Buffer.from(webKey));
 });
+
+test("web checkVerifier rejects a wrong key and a verifier that decrypts to anything else", async () => {
+  const key = await webCrypto.deriveVaultKey("hunter2 master", nodeCrypto.newSalt(), params);
+  const wrongKey = await webCrypto.deriveVaultKey("not the master", nodeCrypto.newSalt(), params);
+  const v = await webCrypto.makeVerifier(key);
+  assert.equal(await webCrypto.checkVerifier(key, v.iv, v.ciphertext), true);
+  assert.equal(await webCrypto.checkVerifier(wrongKey, v.iv, v.ciphertext), false);
+
+  for (const other of ["xyz.atpass.vault.verifier.v2", "xyz.atpass.vault.verifier.v", 42, null]) {
+    const forged = await webCrypto.encryptItem(key, other, "xyz.atpass.vault.meta/self");
+    assert.equal(await webCrypto.checkVerifier(key, forged.iv, forged.ciphertext), false, JSON.stringify(other));
+  }
+});
