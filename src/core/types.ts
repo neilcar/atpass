@@ -67,6 +67,9 @@ export interface CryptoAdapter {
   decryptItem<T = unknown>(key: Uint8Array, iv: string, ciphertext: string, aad: string): Promise<T>;
   makeVerifier(key: Uint8Array): Promise<EncryptedBlob>;
   checkVerifier(key: Uint8Array, iv: string, ciphertext: string): Promise<boolean>;
+  /** Random record key for a new item, so record keys reveal nothing about titles. */
+  newRecordKey(): string;
+  /** Legacy record key (hash of the normalized title). Only used to find items stored before keys were random. */
   rkeyForName(name: string): Promise<string>;
   generatePassword(opts?: GeneratePasswordOptions): string;
 }

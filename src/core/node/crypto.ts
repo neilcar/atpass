@@ -103,6 +103,7 @@ export const nodeCrypto: CryptoAdapter = {
   decryptItem,
   makeVerifier,
   checkVerifier,
+  newRecordKey: () => randomBytes(16).toString("hex"),
   rkeyForName,
   generatePassword,
 };

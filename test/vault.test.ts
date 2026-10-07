@@ -28,6 +28,19 @@ function makeFakeAgent() {
           async deleteRecord({ collection, rkey }: any) {
             repo.delete(`${collection}/${rkey}`);
           },
+          async applyWrites({ writes }: any) {
+            // Atomic like the real PDS: validate every write before applying any.
+            for (const w of writes) {
+              const key = `${w.collection}/${w.rkey}`;
+              if (w.$type.endsWith("#create") && repo.has(key)) throw new Error(`record already exists: ${key}`);
+              if (w.$type.endsWith("#delete") && !repo.has(key)) throw new Error(`no record to delete: ${key}`);
+            }
+            for (const w of writes) {
+              const key = `${w.collection}/${w.rkey}`;
+              if (w.$type.endsWith("#delete")) repo.delete(key);
+              else repo.set(key, w.value);
+            }
+          },
           async listRecords({ collection }: any) {
             const records = [];
             for (const [key, value] of repo.entries()) {
@@ -77,7 +90,7 @@ test("full vault lifecycle: init, unlock, add, get, list, update, remove", async
   assert.equal(updated.username, "alice2");
   assert.equal((await vault.listItems(agent, key)).length, 2);
 
-  await vault.removeItem(agent, "example.com");
+  await vault.removeItem(agent, key, "example.com");
   assert.equal((await vault.listItems(agent, key)).length, 1);
 });
 
@@ -133,11 +146,13 @@ test("malformed records from the PDS are rejected with SchemaValidationError ins
   const { records } = (await agent.com.atproto.repo.listRecords({ collection: "xyz.atpass.vault.item" })).data;
   const itemRef = { repo: agent.assertDid, collection: "xyz.atpass.vault.item", rkey: records[0].uri.split("/").pop() };
   await agent.com.atproto.repo.putRecord({ ...itemRef, record: { ...records[0].value, alg: "none" } });
-  await assert.rejects(() => vault.getItem(agent, key, "github.com"), SchemaValidationError);
+  // With random record keys a malformed record can't be tied to a title, so lookups just don't find it; the listing
+  // still refuses rather than hiding it.
+  await assert.rejects(() => vault.getItem(agent, key, "github.com"), ItemNotFoundError);
   await assert.rejects(() => vault.listItems(agent, key), SchemaValidationError);
 });
 
-test("a malformed item record can still be overwritten or deleted", async () => {
+test("a malformed item record doesn't block other items and can be deleted by its record key", async () => {
   const vault = createVault(nodeCrypto);
   const agent = makeFakeAgent();
   await vault.initVault(agent, "correct horse battery staple");
@@ -145,13 +160,107 @@ test("a malformed item record can still be overwritten or deleted", async () => 
   await vault.addItem(agent, key, { title: "github.com", password: "hunter2" });
   await vault.addItem(agent, key, { title: "example.com", password: "s3cret" });
 
-  const { records } = (await agent.com.atproto.repo.listRecords({ collection: "xyz.atpass.vault.item" })).data;
-  for (const r of records) {
-    await agent.com.atproto.repo.putRecord({ collection: "xyz.atpass.vault.item", rkey: r.uri.split("/").pop(), record: { garbage: true } });
+  // Break whichever record holds example.com.
+  let brokenRkey = "";
+  for (const rkey of await itemRkeys(agent)) {
+    const { data } = await agent.com.atproto.repo.getRecord({ collection: "xyz.atpass.vault.item", rkey });
+    const payload = await nodeCrypto.decryptItem<{ title: string }>(key, data.value.iv, data.value.ciphertext, `xyz.atpass.vault.item/${rkey}`);
+    if (payload.title === "example.com") brokenRkey = rkey;
   }
+  await agent.com.atproto.repo.putRecord({ collection: "xyz.atpass.vault.item", rkey: brokenRkey, record: { garbage: true } });
 
-  await vault.addItem(agent, key, { title: "github.com", password: "fixed" });
-  assert.equal((await vault.getItem(agent, key, "github.com")).password, "fixed");
-  await vault.removeItem(agent, "example.com");
-  assert.deepEqual((await vault.listItems(agent, key)).map((e) => e.title), ["github.com"]);
+  // The listing refuses (MT-004) and names the bad record; everything else still works.
+  await assert.rejects(() => vault.listItems(agent, key), new RegExp(brokenRkey));
+  assert.equal((await vault.getItem(agent, key, "github.com")).password, "hunter2");
+  await vault.addItem(agent, key, { title: "new.example", password: "added" });
+  assert.equal((await vault.getItem(agent, key, "new.example")).password, "added");
+
+  await vault.removeItem(agent, key, brokenRkey);
+  assert.deepEqual((await vault.listItems(agent, key)).map((e) => e.title), ["github.com", "new.example"]);
+});
+
+async function itemRkeys(agent: any): Promise<string[]> {
+  const { records } = (await agent.com.atproto.repo.listRecords({ collection: "xyz.atpass.vault.item" })).data;
+  return records.map((r: any) => r.uri.split("/").pop());
+}
+
+test("new items get random record keys that reveal nothing about the title", async () => {
+  const vault = createVault(nodeCrypto);
+  const agent = makeFakeAgent();
+  await vault.initVault(agent, "correct horse battery staple");
+  const key = await vault.unlockVault(agent, "correct horse battery staple");
+  await vault.addItem(agent, key, { title: "github.com", password: "hunter2" });
+  const [rkey] = await itemRkeys(agent);
+  assert.notEqual(rkey, await nodeCrypto.rkeyForName("github.com"));
+  assert.match(rkey, /^[0-9a-f]{32}$/);
+
+  // Updating keeps the same record; a second vault with the same title gets a different key.
+  await vault.addItem(agent, key, { title: "GitHub.com ", password: "changed" });
+  assert.deepEqual(await itemRkeys(agent), [rkey]);
+  const other = makeFakeAgent();
+  await vault.initVault(other, "correct horse battery staple");
+  const otherKey = await vault.unlockVault(other, "correct horse battery staple");
+  await vault.addItem(other, otherKey, { title: "github.com", password: "x" });
+  assert.notDeepEqual(await itemRkeys(other), [rkey]);
+});
+
+test("unlocking moves items stored under legacy title-hash keys to random keys, atomically and without loss", async () => {
+  const vault = createVault(nodeCrypto);
+  const agent = makeFakeAgent();
+  await vault.initVault(agent, "correct horse battery staple");
+  const key = await vault.unlockVault(agent, "correct horse battery staple");
+
+  // Write items the way older versions did: rkey = hash(title), AAD bound to that rkey.
+  const legacy = [
+    { title: "GitHub.com", username: "alice", password: "hunter2" },
+    { title: "example.com", password: "s3cret", notes: "n" },
+  ];
+  for (const payload of legacy) {
+    const rkey = await nodeCrypto.rkeyForName(payload.title);
+    const { iv, ciphertext } = await nodeCrypto.encryptItem(key, payload, `xyz.atpass.vault.item/${rkey}`);
+    await agent.com.atproto.repo.putRecord({
+      collection: "xyz.atpass.vault.item",
+      rkey,
+      record: { $type: "xyz.atpass.vault.item", alg: "AES-256-GCM", iv, ciphertext, createdAt: "2025-01-01T00:00:00.000Z" },
+    });
+  }
+  // Lookups work before migration too.
+  assert.equal((await vault.getItem(agent, key, "github.com")).password, "hunter2");
+
+  const legacyRkeys = await Promise.all(legacy.map((p) => nodeCrypto.rkeyForName(p.title)));
+  await vault.unlockVault(agent, "correct horse battery staple");
+  const after = await itemRkeys(agent);
+  assert.equal(after.length, 2);
+  for (const rkey of after) assert.ok(!legacyRkeys.includes(rkey), "legacy record key still present");
+
+  for (const payload of legacy) assert.deepEqual(await vault.getItem(agent, key, payload.title), payload);
+  const listed = await vault.listItems(agent, key);
+  assert.deepEqual(listed.map((e) => e.updatedAt), ["2025-01-01T00:00:00.000Z", "2025-01-01T00:00:00.000Z"]);
+
+  // Idempotent: nothing left to move.
+  assert.equal(await vault.migrateLegacyItemKeys(agent, key), 0);
+});
+
+test("a failed migration leaves the legacy items intact and still usable", async () => {
+  const vault = createVault(nodeCrypto);
+  const agent = makeFakeAgent();
+  await vault.initVault(agent, "correct horse battery staple");
+  const key = await vault.unlockVault(agent, "correct horse battery staple");
+  const payload = { title: "github.com", password: "hunter2" };
+  const rkey = await nodeCrypto.rkeyForName(payload.title);
+  const { iv, ciphertext } = await nodeCrypto.encryptItem(key, payload, `xyz.atpass.vault.item/${rkey}`);
+  await agent.com.atproto.repo.putRecord({
+    collection: "xyz.atpass.vault.item",
+    rkey,
+    record: { $type: "xyz.atpass.vault.item", alg: "AES-256-GCM", iv, ciphertext, createdAt: "2025-01-01T00:00:00.000Z" },
+  });
+
+  agent.com.atproto.repo.applyWrites = async () => {
+    throw new Error("network down");
+  };
+  const errors: unknown[] = [];
+  await vault.unlockVault(agent, "correct horse battery staple", { onMigrationError: (err) => errors.push(err) });
+  assert.equal(errors.length, 1, "the failure is reported, not swallowed");
+  assert.deepEqual(await itemRkeys(agent), [rkey]);
+  assert.deepEqual(await vault.getItem(agent, key, "github.com"), payload);
 });

@@ -20,7 +20,9 @@ export function UnlockVault({
     setError(null);
     setBusy(true);
     try {
-      const key = await vault.unlockVault(agent, password);
+      const key = await vault.unlockVault(agent, password, {
+        onMigrationError: (err) => console.warn("atpass: Couldn't move vault items off title-hash record keys; will retry at the next unlock.", err),
+      });
       onUnlocked(key);
       setPassword("");
     } catch (err) {

@@ -36,7 +36,10 @@ async function unlock(): Promise<{ agent: AtpAgent; key: Uint8Array }> {
   const agent = await getAgent();
   let masterPassword = await promptMasterPassword();
   try {
-    const key = await unlockVault(agent, masterPassword);
+    const key = await unlockVault(agent, masterPassword, {
+      onMigrationError: (err) =>
+        console.error(`atpass: warning: Couldn't move vault items off title-hash record keys; will retry at the next unlock. (${err instanceof Error ? err.message : String(err)})`),
+    });
     return { agent, key };
   } catch (err) {
     if (err instanceof WrongMasterPasswordError) fail("incorrect master password");
@@ -218,13 +221,14 @@ program
   .argument("<title>", "name of the item")
   .option("-y, --yes", "skip confirmation")
   .action(async (title: string, opts: { yes?: boolean }) => {
-    const agent = await getAgent();
+    // Unlocking is needed to find the item: record keys are random, so titles are only visible after decryption.
+    const { agent, key } = await unlock();
     if (!opts.yes) {
       const { ok } = await prompts({ type: "confirm", name: "ok", message: `Delete "${title}"?`, initial: false });
       if (!ok) return;
     }
     try {
-      await removeItem(agent, title);
+      await removeItem(agent, key, title);
     } catch (err) {
       if (err instanceof ItemNotFoundError) fail(err.message);
       throw err;

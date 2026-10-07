@@ -68,3 +68,12 @@ test("web checkVerifier rejects a wrong key and a verifier that decrypts to anyt
     assert.equal(await webCrypto.checkVerifier(key, forged.iv, forged.ciphertext), false, JSON.stringify(other));
   }
 });
+
+test("both adapters generate random 128-bit hex record keys", () => {
+  for (const adapter of [nodeCrypto, webCrypto]) {
+    const a = adapter.newRecordKey();
+    const b = adapter.newRecordKey();
+    assert.match(a, /^[0-9a-f]{32}$/);
+    assert.notEqual(a, b);
+  }
+});

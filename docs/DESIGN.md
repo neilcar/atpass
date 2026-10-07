@@ -42,9 +42,9 @@ Each vault lives in two record collections in the user's own atproto repo — se
 | Collection | Record key | Fields | Purpose |
 | --- | --- | --- | --- |
 | `xyz.atpass.vault.meta` | literal `self` (one per account) | `kdf`, `salt`, `kdfParams`, `verifier`, `verifierIv`, `createdAt` | Argon2id parameters + an encrypted check value, so a client can verify the master password before touching real data |
-| `xyz.atpass.vault.item` | `sha256(lowercase title))`, first 16 bytes as hex | `alg`, `iv`, `ciphertext`, `createdAt`, `updatedAt` | One vault entry; `ciphertext` is the whole item — title, username, password, url, notes — encrypted together as one JSON blob |
+| `xyz.atpass.vault.item` | Random 128-bit value as hex | `alg`, `iv`, `ciphertext`, `createdAt`, `updatedAt` | One vault entry; `ciphertext` is the whole item — title, username, password, url, notes — encrypted together as one JSON blob |
 
-**Why a hashed record key**: it turns "get the item named X" into a single `getRecord` call instead of listing and decrypting every item to find it by title. The hash isn't a secrecy boundary — the repo is public, so anyone who already suspects a title can hash it and check whether that record exists — it's purely a lookup index.
+**Why a random record key**: earlier versions used `sha256(lowercase title)`, which made "get the item named X" a single `getRecord`, but let anyone reading the public repo test guesses ("is there a record for github.com?"). Keys are now random, so a lookup by title lists and decrypts the vault's items locally. Unlocking a vault moves any items still under title-hash keys to random keys: each batch re-encrypts the items (the key is bound in as AAD) and creates the new records and deletes the old ones in one `applyWrites` commit, so nothing is lost or duplicated if it's interrupted. Random keys have the same shape as the old hashes, so the repo doesn't show which items have moved. Records already published under hash keys may survive in copies of the repo made before the move, and anyone watching the repo while it happens can link each old key to its new one.
 
 **Why AAD-bound ciphertext**: AES-GCM's additional authenticated data on every item is its own record path, `xyz.atpass.vault.item/<rkey>`. That ties each ciphertext to the specific record it lives in: swapping one item's ciphertext into another item's record (e.g. a malicious PDS operator trying to confuse which password belongs to which site) fails to decrypt, because the AAD won't match. [`test/crypto.test.ts`](https://github.com/neilcar/atpass/blob/main/test/crypto.test.ts) asserts this directly.
 
@@ -86,7 +86,8 @@ interface CryptoAdapter {
   decryptItem<T>(key: Uint8Array, iv: string, ciphertext: string, aad: string): Promise<T>;
   makeVerifier(key: Uint8Array): Promise<EncryptedBlob>;
   checkVerifier(key: Uint8Array, iv: string, ciphertext: string): Promise<boolean>;
-  rkeyForName(name: string): Promise<string>;
+  newRecordKey(): string;
+  rkeyForName(name: string): Promise<string>; // legacy title-hash key, only to recognize items to migrate
   generatePassword(opts?: GeneratePasswordOptions): string;
 }
 ```

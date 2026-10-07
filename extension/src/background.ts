@@ -183,7 +183,10 @@ async function handle(req: Request): Promise<unknown> {
 
     case "UNLOCK": {
       const agent = await getAgentOrThrow();
-      await setUnlocked(await vault.unlockVault(agent, req.masterPassword));
+      const key = await vault.unlockVault(agent, req.masterPassword, {
+        onMigrationError: (err) => console.warn("atpass: Couldn't move vault items off title-hash record keys; will retry at the next unlock.", err),
+      });
+      await setUnlocked(key);
       return;
     }
 
@@ -210,7 +213,7 @@ async function handle(req: Request): Promise<unknown> {
 
     case "DELETE_ITEM": {
       const agent = await getAgentOrThrow();
-      await withKey(() => vault.removeItem(agent, req.title));
+      await withKey((key) => vault.removeItem(agent, key, req.title));
       return;
     }
 

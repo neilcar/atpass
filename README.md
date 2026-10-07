@@ -15,9 +15,11 @@ README.
 ## How it works
 
 - Every vault item is one record in the `xyz.atpass.vault.item` collection of
-  your atproto repo. The record key is `sha256(lowercase title)`, so items
-  can be fetched directly by name without listing the whole vault or
-  revealing titles in plaintext record keys.
+  your atproto repo, under a random record key, so the repo reveals nothing
+  about titles. Finding an item by name means decrypting the vault's items,
+  which happens locally. Vaults from older versions, which keyed items by
+  `sha256(lowercase title)`, are moved to random keys automatically the next
+  time they're unlocked.
 - A single `xyz.atpass.vault.meta` record (rkey `self`) holds the Argon2id
   salt/parameters and an encrypted "verifier" used to check your master
   password locally — it contains no secrets and can't be used to derive your
