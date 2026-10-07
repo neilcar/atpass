@@ -26,8 +26,8 @@ README.
   your atproto login. It's run through Argon2id to derive a 256-bit key,
   which encrypts each item with AES-256-GCM (unique nonce per item, record
   key bound in as additional authenticated data so records can't be swapped).
-- Locally, only your atproto session tokens are cached (`~/.atpass/session.json`
-  for the CLI, the tab's `sessionStorage` for the web app), so you don't have to
+- Locally, only your atproto session tokens are cached (the OS keyring for
+  the CLI, the tab's `sessionStorage` for the web app), so you don't have to
   log in for every command or page load. Nothing about the master password or vault key is ever persisted.
 - Both clients share one crypto core: Argon2id key derivation and AES-256-GCM
   encryption are implemented once for Node (`node:crypto` + `@node-rs/argon2`)
@@ -185,11 +185,13 @@ Design notes:
   weak/reused or if your local machine is compromised while you're using it.
   There's no local vault caching, so a network failure just fails the
   command — nothing is left half-written locally.
-- The cached atproto session tokens (`~/.atpass/session.json` for the CLI,
+- The cached atproto session tokens (the OS keyring for the CLI — macOS
+  Keychain, Windows Credential Manager or Linux Secret Service, falling back
+  to a `chmod 600` `~/.atpass/session.json` with a warning when there's none —
   `sessionStorage` for the web app, `browser.storage.local` for the extension)
   are bearer credentials for your atproto account's repo (read/write to all
   your atproto data), scoped by whatever an App Password grants. Treat the
-  CLI's file like any other CLI auth token cache (e.g. `~/.aws/credentials`,
+  CLI's copy like any other CLI auth token cache (e.g. `~/.aws/credentials`,
   `gh`'s config). In the web app, that means anything that can run JavaScript
   on the page (an XSS bug, a malicious browser extension) can steal the
   session — there's no server component to add defense in depth here, which

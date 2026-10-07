@@ -68,7 +68,7 @@ The master password is run through Argon2id (128 MiB memory, 5 iterations, paral
 
 | Client | Storage | Isolation |
 | --- | --- | --- |
-| CLI | `~/.atpass/session.json` | File permissions (`chmod 600`) |
+| CLI | OS keyring (Keychain / Credential Manager / Secret Service); `~/.atpass/session.json` only when no keyring is available | Keyring's per-user protection; the fallback file relies on permissions (`chmod 600`) and the CLI warns when it's used |
 | Web app | `sessionStorage` (per tab, cleared when it closes) | None from same-origin JS — readable by an XSS bug (the CSP limits script to the app's own origin) or a rogue browser extension |
 | Firefox extension | `browser.storage.local` | Extension sandbox — not reachable from page JavaScript at all |
 
