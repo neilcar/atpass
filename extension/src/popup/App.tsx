@@ -41,7 +41,7 @@ export default function App() {
     return <SetupVault handle={status.handle} onCreated={refreshStatus} onLogout={refreshStatus} />;
   }
   if (!status.unlocked) {
-    return <UnlockVault handle={status.handle} onUnlocked={refreshStatus} onLogout={refreshStatus} />;
+    return <UnlockVault handle={status.handle} lockReason={status.lockReason} onUnlocked={refreshStatus} onLogout={refreshStatus} />;
   }
   return <VaultScreen handle={status.handle} onLock={refreshStatus} onLogout={refreshStatus} />;
 }

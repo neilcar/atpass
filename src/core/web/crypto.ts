@@ -1,5 +1,5 @@
 import { argon2id } from "hash-wasm";
-import { assertKdfParams } from "../types.js";
+import { assertKdfParams, SALT_LEN } from "../types.js";
 import type { CryptoAdapter, EncryptedBlob, GeneratePasswordOptions, KdfParams } from "../types.js";
 
 const KEY_LEN = 32; // AES-256
@@ -24,15 +24,21 @@ function b64decode(s: string): Uint8Array<ArrayBuffer> {
 
 async function deriveVaultKey(masterPassword: string, salt: Uint8Array, params: KdfParams): Promise<Uint8Array> {
   assertKdfParams(params);
-  return argon2id({
-    password: masterPassword,
-    salt,
-    iterations: params.timeCost,
-    parallelism: params.parallelism,
-    memorySize: params.memoryCost,
-    hashLength: KEY_LEN,
-    outputType: "binary",
-  });
+  // The string itself can't be wiped (JS strings are immutable), but the UTF-8 copy handed to argon2 can.
+  const passwordBytes = new TextEncoder().encode(masterPassword);
+  try {
+    return await argon2id({
+      password: passwordBytes,
+      salt,
+      iterations: params.timeCost,
+      parallelism: params.parallelism,
+      memorySize: params.memoryCost,
+      hashLength: KEY_LEN,
+      outputType: "binary",
+    });
+  } finally {
+    passwordBytes.fill(0);
+  }
 }
 
 // crypto.subtle wants BufferSource (ArrayBuffer-backed); our keys/bytes are always
@@ -74,10 +80,21 @@ async function makeVerifier(key: Uint8Array): Promise<EncryptedBlob> {
   return encryptItem(key, VERIFIER_PLAINTEXT, VERIFIER_AAD);
 }
 
+/** Compares equal-length byte arrays without exiting early on the first mismatch. */
+function timingSafeEqual(a: Uint8Array, b: Uint8Array): boolean {
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) diff |= a[i] ^ b[i];
+  return diff === 0;
+}
+
 async function checkVerifier(key: Uint8Array, iv: string, ciphertext: string): Promise<boolean> {
   try {
-    const decoded = await decryptItem<string>(key, iv, ciphertext, VERIFIER_AAD);
-    return decoded === VERIFIER_PLAINTEXT;
+    const decoded = await decryptItem<unknown>(key, iv, ciphertext, VERIFIER_AAD);
+    if (typeof decoded !== "string") return false;
+    const a = new TextEncoder().encode(decoded);
+    const b = new TextEncoder().encode(VERIFIER_PLAINTEXT);
+    return timingSafeEqual(a, b);
   } catch {
     return false;
   }
@@ -117,12 +134,16 @@ function generatePassword(opts: GeneratePasswordOptions = {}): string {
 }
 
 export const webCrypto: CryptoAdapter = {
-  newSalt: () => crypto.getRandomValues(new Uint8Array(16)),
+  newSalt: () => crypto.getRandomValues(new Uint8Array(SALT_LEN)),
   deriveVaultKey,
   encryptItem,
   decryptItem,
   makeVerifier,
   checkVerifier,
+  newRecordKey: () =>
+    Array.from(crypto.getRandomValues(new Uint8Array(16)))
+      .map((b) => b.toString(16).padStart(2, "0"))
+      .join(""),
   rkeyForName,
   generatePassword,
 };

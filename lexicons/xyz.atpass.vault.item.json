@@ -4,7 +4,7 @@
   "defs": {
     "main": {
       "type": "record",
-      "description": "One end-to-end encrypted vault entry (login credentials, note, etc). Every field that could reveal what the entry is for lives inside `ciphertext`; the PDS and anyone reading the repo sees only opaque bytes plus a content-addressed record key.",
+      "description": "One end-to-end encrypted vault entry (login credentials, note, etc). Every field that could reveal what the entry is for lives inside `ciphertext`; the PDS and anyone reading the repo sees only opaque bytes plus a random record key (older versions used a hash of the title).",
       "key": "any",
       "record": {
         "type": "object",

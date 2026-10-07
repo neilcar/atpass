@@ -1,4 +1,5 @@
 import type { Agent } from "@atproto/api";
+import { VaultMetaRecordSchema, ItemRecordSchema, parseRecord } from "./schemas.js";
 
 export const META_COLLECTION = "xyz.atpass.vault.meta";
 export const META_RKEY = "self";
@@ -19,17 +20,19 @@ function isNotFound(err: any): boolean {
 }
 
 export async function getVaultMeta(agent: Agent): Promise<VaultMetaRecord | null> {
+  let value: unknown;
   try {
     const res = await agent.com.atproto.repo.getRecord({
       repo: agent.assertDid,
       collection: META_COLLECTION,
       rkey: META_RKEY,
     });
-    return res.data.value as unknown as VaultMetaRecord;
+    value = res.data.value;
   } catch (err: any) {
     if (isNotFound(err)) return null;
     throw err;
   }
+  return parseRecord(VaultMetaRecordSchema, value, "Failed to validate vault metadata from PDS");
 }
 
 export async function putVaultMeta(agent: Agent, meta: Omit<VaultMetaRecord, "$type">): Promise<void> {
@@ -62,17 +65,19 @@ export async function putItemRecord(agent: Agent, rkey: string, record: Omit<Ite
 }
 
 export async function getItemRecord(agent: Agent, rkey: string): Promise<ItemRecord | null> {
+  let value: unknown;
   try {
     const res = await agent.com.atproto.repo.getRecord({
       repo: agent.assertDid,
       collection: ITEM_COLLECTION,
       rkey,
     });
-    return res.data.value as unknown as ItemRecord;
+    value = res.data.value;
   } catch (err: any) {
     if (isNotFound(err)) return null;
     throw err;
   }
+  return parseRecord(ItemRecordSchema, value, "Failed to validate vault item from PDS");
 }
 
 export async function deleteItemRecord(agent: Agent, rkey: string): Promise<void> {
@@ -101,9 +106,60 @@ export async function listItemRecords(agent: Agent): Promise<ListedItem[]> {
     });
     for (const r of res.data.records) {
       const rkey = r.uri.split("/").pop()!;
-      items.push({ rkey, uri: r.uri, record: r.value as unknown as ItemRecord });
+      // Throws on the first malformed record rather than skipping it, so corruption or tampering isn't silently hidden.
+      items.push({ rkey, uri: r.uri, record: parseRecord(ItemRecordSchema, r.value, `Failed to validate vault item ${rkey} from PDS`) });
     }
     cursor = res.data.cursor;
   } while (cursor);
   return items;
+}
+
+export interface ListedItemOrMalformed {
+  rkey: string;
+  /** null when the record doesn't match the item schema. */
+  record: ItemRecord | null;
+}
+
+/** Like listItemRecords, but reports malformed records instead of throwing, for lookups that must see every record. */
+export async function listItemRecordsAllowingMalformed(agent: Agent): Promise<ListedItemOrMalformed[]> {
+  const items: ListedItemOrMalformed[] = [];
+  let cursor: string | undefined;
+  do {
+    const res = await agent.com.atproto.repo.listRecords({
+      repo: agent.assertDid,
+      collection: ITEM_COLLECTION,
+      limit: 100,
+      cursor,
+    });
+    for (const r of res.data.records) {
+      const rkey = r.uri.split("/").pop()!;
+      const parsed = ItemRecordSchema.safeParse(r.value);
+      items.push({ rkey, record: parsed.success ? parsed.data : null });
+    }
+    cursor = res.data.cursor;
+  } while (cursor);
+  return items;
+}
+
+export interface ItemRekey {
+  fromRkey: string;
+  toRkey: string;
+  record: Omit<ItemRecord, "$type">;
+}
+
+/** Move each item to a new record key, creating the new record and deleting the old one in a single atomic repo commit. */
+export async function rekeyItemRecords(agent: Agent, moves: ItemRekey[]): Promise<void> {
+  await agent.com.atproto.repo.applyWrites({
+    repo: agent.assertDid,
+    validate: false,
+    writes: moves.flatMap(({ fromRkey, toRkey, record }) => [
+      {
+        $type: "com.atproto.repo.applyWrites#create" as const,
+        collection: ITEM_COLLECTION,
+        rkey: toRkey,
+        value: { $type: ITEM_COLLECTION, ...record },
+      },
+      { $type: "com.atproto.repo.applyWrites#delete" as const, collection: ITEM_COLLECTION, rkey: fromRkey },
+    ]),
+  });
 }

@@ -1,17 +1,20 @@
 import { useState } from "react";
 import { sendToBackground } from "../../lib/messages";
+import { accountUserInputs, validatePasswordStrength } from "@core/passwordValidator.js";
 
 export function SetupVault({ handle, onCreated, onLogout }: { handle?: string; onCreated: () => void; onLogout: () => void }) {
   const [pw1, setPw1] = useState("");
   const [pw2, setPw2] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const handleInputs = accountUserInputs(undefined, handle);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
-    if (pw1.length < 8) {
-      setError("Use at least 8 characters.");
+    const strength = await validatePasswordStrength(pw1, handleInputs);
+    if (!strength.valid) {
+      setError(strength.feedback);
       return;
     }
     if (pw1 !== pw2) {
@@ -22,6 +25,8 @@ export function SetupVault({ handle, onCreated, onLogout }: { handle?: string; o
     try {
       await sendToBackground({ type: "INIT_VAULT", masterPassword: pw1 });
       onCreated();
+      setPw1("");
+      setPw2("");
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
