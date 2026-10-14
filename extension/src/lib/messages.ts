@@ -1,12 +1,16 @@
 import type { GeneratePasswordOptions, ItemPayload } from "@core/types.js";
 import type { VaultListEntry } from "@core/vault.js";
 
+/** Why the vault is locked when the user didn't lock it: no vault activity for a while, or Firefox unloaded the background page. */
+export type LockReason = "idle" | "suspended";
+
 export interface StatusResponse {
   loggedIn: boolean;
   handle?: string;
   service?: string;
   hasVault: boolean;
   unlocked: boolean;
+  lockReason?: LockReason;
 }
 
 export type Request =

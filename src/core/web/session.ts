@@ -10,9 +10,12 @@ interface StoredSession {
   session: AtpSessionData;
 }
 
+// sessionStorage, not localStorage: the token is scoped to this tab and gone when it closes, so it doesn't sit on disk
+// for later reading. Same-origin script running in the tab can still read it; the CSP is what guards against that.
 function loadStored(): StoredSession | null {
+  migrateFromLocalStorage();
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw = sessionStorage.getItem(STORAGE_KEY);
     return raw ? (JSON.parse(raw) as StoredSession) : null;
   } catch {
     return null;
@@ -20,11 +23,24 @@ function loadStored(): StoredSession | null {
 }
 
 function saveStored(stored: StoredSession): void {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(stored));
+  sessionStorage.setItem(STORAGE_KEY, JSON.stringify(stored));
 }
 
 function clearStored(): void {
+  sessionStorage.removeItem(STORAGE_KEY);
   localStorage.removeItem(STORAGE_KEY);
+}
+
+/** Older versions kept the session in localStorage: move it into this tab's sessionStorage and delete the persistent copy. */
+function migrateFromLocalStorage(): void {
+  try {
+    const legacy = localStorage.getItem(STORAGE_KEY);
+    if (legacy === null) return;
+    localStorage.removeItem(STORAGE_KEY);
+    if (sessionStorage.getItem(STORAGE_KEY) === null) sessionStorage.setItem(STORAGE_KEY, legacy);
+  } catch {
+    // Storage unavailable (e.g. blocked by the browser): nothing to migrate.
+  }
 }
 
 let agentSingleton: AtpAgent | null = null;

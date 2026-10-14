@@ -2,17 +2,21 @@ import type { Agent } from "@atproto/api";
 import {
   getVaultMeta,
   putVaultMeta,
-  getItemRecord,
   putItemRecord,
   deleteItemRecord,
   listItemRecords,
+  listItemRecordsAllowingMalformed,
+  rekeyItemRecords,
   META_COLLECTION,
   ITEM_COLLECTION,
 } from "./records.js";
 import type { CryptoAdapter, ItemPayload } from "./types.js";
 import { KDF_DEFAULTS, WeakKdfParamsError, assertKdfParams } from "./types.js";
+import { SchemaValidationError } from "./schemas.js";
+import type { ItemRecord } from "./records.js";
+import { accountUserInputs, validatePasswordStrength, WeakMasterPasswordError } from "./passwordValidator.js";
 
-export { WeakKdfParamsError };
+export { WeakKdfParamsError, SchemaValidationError, WeakMasterPasswordError };
 
 export class WrongMasterPasswordError extends Error {
   constructor() {
@@ -51,12 +55,93 @@ export function createVault(crypto: CryptoAdapter) {
     return `${ITEM_COLLECTION}/${rkey}`;
   }
 
+  interface DecryptedItem {
+    rkey: string;
+    record: ItemRecord;
+    payload: ItemPayload;
+  }
+
+  /**
+   * Decrypt every item. Record keys are random, so an item can only be found by title by decrypting. Records that are
+   * malformed or don't decrypt under this key are returned by rkey in `unreadable` rather than failing the lookup.
+   */
+  async function decryptAll(agent: Agent, key: Uint8Array): Promise<{ items: DecryptedItem[]; unreadable: string[] }> {
+    const items: DecryptedItem[] = [];
+    const unreadable: string[] = [];
+    for (const { rkey, record } of await listItemRecordsAllowingMalformed(agent)) {
+      if (!record) {
+        unreadable.push(rkey);
+        continue;
+      }
+      try {
+        const payload = await crypto.decryptItem<ItemPayload>(key, record.iv, record.ciphertext, itemAad(rkey));
+        items.push({ rkey, record, payload });
+      } catch {
+        unreadable.push(rkey);
+      }
+    }
+    return { items, unreadable };
+  }
+
+  function sameTitle(a: string, b: string): boolean {
+    return a.trim().toLowerCase() === b.trim().toLowerCase();
+  }
+
+  async function findItem(agent: Agent, key: Uint8Array, name: string) {
+    const all = await decryptAll(agent, key);
+    return { ...all, found: all.items.find((i) => sameTitle(i.payload.title, name)) ?? null };
+  }
+
+  /**
+   * Move items still stored under the legacy record key (a hash of the title, which let anyone reading the repo test
+   * guesses like "does this vault have github.com?") to random record keys. Each batch re-encrypts the items (the
+   * record key is bound in as AAD) and creates the new records and deletes the old ones in one atomic commit, so an
+   * item is never lost or duplicated. New keys have the same shape as legacy ones, so the repo doesn't reveal which
+   * items have moved. Returns how many items were moved.
+   */
+  async function migrateLegacyItemKeys(agent: Agent, key: Uint8Array): Promise<number> {
+    const { items } = await decryptAll(agent, key);
+    const legacy: DecryptedItem[] = [];
+    for (const item of items) {
+      if (item.rkey === (await crypto.rkeyForName(item.payload.title))) legacy.push(item);
+    }
+    const BATCH = 50; // two writes per item; applyWrites accepts up to 200
+    for (let i = 0; i < legacy.length; i += BATCH) {
+      const moves = [];
+      for (const item of legacy.slice(i, i + BATCH)) {
+        const toRkey = crypto.newRecordKey();
+        const { iv, ciphertext } = await crypto.encryptItem(key, item.payload, itemAad(toRkey));
+        moves.push({
+          fromRkey: item.rkey,
+          toRkey,
+          record: {
+            alg: "AES-256-GCM" as const,
+            iv,
+            ciphertext,
+            createdAt: item.record.createdAt,
+            updatedAt: item.record.updatedAt,
+          },
+        });
+      }
+      await rekeyItemRecords(agent, moves);
+    }
+    return legacy.length;
+  }
+
   async function hasVault(agent: Agent): Promise<boolean> {
     return (await getVaultMeta(agent)) !== null;
   }
 
-  /** Create the vault meta record for a fresh account. Throws VaultAlreadyExistsError if one exists. */
+  /**
+   * Create the vault meta record for a fresh account. Throws VaultAlreadyExistsError if one exists, or
+   * WeakMasterPasswordError if the master password is too guessable — enforced here so every client gets the same check.
+   */
   async function initVault(agent: Agent, masterPassword: string): Promise<void> {
+    const strength = await validatePasswordStrength(
+      masterPassword,
+      accountUserInputs(agent.assertDid, (agent as { session?: { handle?: string } }).session?.handle),
+    );
+    if (!strength.valid) throw new WeakMasterPasswordError(strength.feedback, strength.score);
     const existing = await getVaultMeta(agent);
     if (existing) throw new VaultAlreadyExistsError();
     const salt = crypto.newSalt();
@@ -78,7 +163,11 @@ export function createVault(crypto: CryptoAdapter) {
    * tampered one could otherwise make key derivation cheap). It rejects rather than substituting defaults, because
    * defaults would derive a different key and be misreported as a wrong password, hiding the tampering.
    */
-  async function unlockVault(agent: Agent, masterPassword: string): Promise<Uint8Array> {
+  async function unlockVault(
+    agent: Agent,
+    masterPassword: string,
+    opts: { onMigrationError?: (err: unknown) => void } = {},
+  ): Promise<Uint8Array> {
     const meta = await getVaultMeta(agent);
     if (!meta) throw new VaultNotInitializedError();
     assertKdfParams(meta.kdfParams);
@@ -87,34 +176,41 @@ export function createVault(crypto: CryptoAdapter) {
     if (!(await crypto.checkVerifier(key, meta.verifierIv, meta.verifier))) {
       throw new WrongMasterPasswordError();
     }
+    // Lookups work with either key format, so a failed move (e.g. a network error) doesn't fail the unlock; it's
+    // reported through onMigrationError and retried at the next unlock.
+    await migrateLegacyItemKeys(agent, key).catch((err) => opts.onMigrationError?.(err));
     return key;
   }
 
+  /** Add an item, or update the one with the same title (case/whitespace-insensitive) in place. */
   async function addItem(agent: Agent, key: Uint8Array, payload: ItemPayload): Promise<void> {
-    const rkey = await crypto.rkeyForName(payload.title);
-    const existing = await getItemRecord(agent, rkey);
+    const { found } = await findItem(agent, key, payload.title);
+    const rkey = found?.rkey ?? crypto.newRecordKey();
     const { iv, ciphertext } = await crypto.encryptItem(key, payload, itemAad(rkey));
     const now = new Date().toISOString();
     await putItemRecord(agent, rkey, {
       alg: "AES-256-GCM",
       iv,
       ciphertext,
-      createdAt: existing?.createdAt ?? now,
-      updatedAt: existing ? now : undefined,
+      createdAt: found?.record.createdAt ?? now,
+      updatedAt: found ? now : undefined,
     });
   }
 
   async function getItem(agent: Agent, key: Uint8Array, name: string): Promise<ItemPayload> {
-    const rkey = await crypto.rkeyForName(name);
-    const record = await getItemRecord(agent, rkey);
-    if (!record) throw new ItemNotFoundError(name);
-    return crypto.decryptItem<ItemPayload>(key, record.iv, record.ciphertext, itemAad(rkey));
+    const { found } = await findItem(agent, key, name);
+    if (!found) throw new ItemNotFoundError(name);
+    return found.payload;
   }
 
-  async function removeItem(agent: Agent, name: string): Promise<void> {
-    const rkey = await crypto.rkeyForName(name);
-    const existing = await getItemRecord(agent, rkey);
-    if (!existing) throw new ItemNotFoundError(name);
+  /**
+   * Delete the item with this title. `name` may also be the record key of a malformed or undecryptable record (as
+   * named in the error that listing it raises), so such records can still be removed.
+   */
+  async function removeItem(agent: Agent, key: Uint8Array, name: string): Promise<void> {
+    const { found, unreadable } = await findItem(agent, key, name);
+    const rkey = found?.rkey ?? (unreadable.includes(name) ? name : null);
+    if (!rkey) throw new ItemNotFoundError(name);
     await deleteItemRecord(agent, rkey);
   }
 
@@ -138,7 +234,7 @@ export function createVault(crypto: CryptoAdapter) {
     return out;
   }
 
-  return { hasVault, initVault, unlockVault, addItem, getItem, removeItem, listItems };
+  return { hasVault, initVault, unlockVault, addItem, getItem, removeItem, listItems, migrateLegacyItemKeys };
 }
 
 export type Vault = ReturnType<typeof createVault>;

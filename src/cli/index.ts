@@ -8,6 +8,7 @@ import { getAgent, login as atpLogin, logout as atpLogout, DEFAULT_SERVICE } fro
 import { getVaultMeta } from "../core/records.js";
 import { createVault, WrongMasterPasswordError, VaultNotInitializedError, ItemNotFoundError } from "../core/vault.js";
 import { nodeCrypto } from "../core/node/crypto.js";
+import { accountUserInputs, validatePasswordStrength } from "../core/passwordValidator.js";
 import { loadSession } from "../core/node/config.js";
 
 const require = createRequire(import.meta.url);
@@ -33,14 +34,41 @@ async function promptMasterPassword(message = "Master password"): Promise<string
 /** Get an authenticated agent + unlocked vault key, prompting for the master password. */
 async function unlock(): Promise<{ agent: AtpAgent; key: Uint8Array }> {
   const agent = await getAgent();
-  const masterPassword = await promptMasterPassword();
+  let masterPassword = await promptMasterPassword();
   try {
-    const key = await unlockVault(agent, masterPassword);
+    const key = await unlockVault(agent, masterPassword, {
+      onMigrationError: (err) =>
+        console.error(`atpass: warning: Couldn't move vault items off title-hash record keys; will retry at the next unlock. (${err instanceof Error ? err.message : String(err)})`),
+    });
     return { agent, key };
   } catch (err) {
     if (err instanceof WrongMasterPasswordError) fail("incorrect master password");
     if (err instanceof VaultNotInitializedError) fail("no vault yet — run `atpass init` first");
     throw err;
+  } finally {
+    // Drop the only reference so the string can be collected; the byte copy used for key derivation is zeroed in deriveVaultKey.
+    masterPassword = "";
+  }
+}
+
+/** Prompt for a new master password (re-prompting until it's strong enough), confirm it, and create the vault with it. */
+async function createVaultInteractively(agent: AtpAgent): Promise<void> {
+  const userInputs = accountUserInputs(agent.assertDid, agent.session?.handle);
+  let pw1 = await promptMasterPassword("New master password");
+  for (;;) {
+    const strength = await validatePasswordStrength(pw1, userInputs);
+    if (strength.valid) break;
+    console.error(strength.feedback);
+    pw1 = await promptMasterPassword("New master password");
+  }
+  let pw2 = await promptMasterPassword("Confirm master password");
+  try {
+    if (pw1 !== pw2) fail("master passwords did not match");
+    await initVault(agent, pw1);
+  } finally {
+    // Drop the only references so the strings can be collected; the byte copy used for key derivation is zeroed in deriveVaultKey.
+    pw1 = "";
+    pw2 = "";
   }
 }
 
@@ -71,10 +99,7 @@ program
         initial: true,
       });
       if (doInit) {
-        const pw1 = await promptMasterPassword("New master password");
-        const pw2 = await promptMasterPassword("Confirm master password");
-        if (pw1 !== pw2) fail("master passwords did not match");
-        await initVault(agent, pw1);
+        await createVaultInteractively(agent);
         console.log("Vault created. This master password is never sent anywhere — don't lose it.");
       }
     }
@@ -103,10 +128,7 @@ program
   .description("Create a vault on the currently logged-in account")
   .action(async () => {
     const agent = await getAgent();
-    const pw1 = await promptMasterPassword("New master password");
-    const pw2 = await promptMasterPassword("Confirm master password");
-    if (pw1 !== pw2) fail("master passwords did not match");
-    await initVault(agent, pw1);
+    await createVaultInteractively(agent);
     console.log("Vault created.");
   });
 
@@ -199,13 +221,14 @@ program
   .argument("<title>", "name of the item")
   .option("-y, --yes", "skip confirmation")
   .action(async (title: string, opts: { yes?: boolean }) => {
-    const agent = await getAgent();
+    // Unlocking is needed to find the item: record keys are random, so titles are only visible after decryption.
+    const { agent, key } = await unlock();
     if (!opts.yes) {
       const { ok } = await prompts({ type: "confirm", name: "ok", message: `Delete "${title}"?`, initial: false });
       if (!ok) return;
     }
     try {
-      await removeItem(agent, title);
+      await removeItem(agent, key, title);
     } catch (err) {
       if (err instanceof ItemNotFoundError) fail(err.message);
       throw err;

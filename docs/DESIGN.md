@@ -42,15 +42,15 @@ Each vault lives in two record collections in the user's own atproto repo — se
 | Collection | Record key | Fields | Purpose |
 | --- | --- | --- | --- |
 | `xyz.atpass.vault.meta` | literal `self` (one per account) | `kdf`, `salt`, `kdfParams`, `verifier`, `verifierIv`, `createdAt` | Argon2id parameters + an encrypted check value, so a client can verify the master password before touching real data |
-| `xyz.atpass.vault.item` | `sha256(lowercase title))`, first 16 bytes as hex | `alg`, `iv`, `ciphertext`, `createdAt`, `updatedAt` | One vault entry; `ciphertext` is the whole item — title, username, password, url, notes — encrypted together as one JSON blob |
+| `xyz.atpass.vault.item` | Random 128-bit value as hex | `alg`, `iv`, `ciphertext`, `createdAt`, `updatedAt` | One vault entry; `ciphertext` is the whole item — title, username, password, url, notes — encrypted together as one JSON blob |
 
-**Why a hashed record key**: it turns "get the item named X" into a single `getRecord` call instead of listing and decrypting every item to find it by title. The hash isn't a secrecy boundary — the repo is public, so anyone who already suspects a title can hash it and check whether that record exists — it's purely a lookup index.
+**Why a random record key**: earlier versions used `sha256(lowercase title)`, which made "get the item named X" a single `getRecord`, but let anyone reading the public repo test guesses ("is there a record for github.com?"). Keys are now random, so a lookup by title lists and decrypts the vault's items locally. Unlocking a vault moves any items still under title-hash keys to random keys: each batch re-encrypts the items (the key is bound in as AAD) and creates the new records and deletes the old ones in one `applyWrites` commit, so nothing is lost or duplicated if it's interrupted. Random keys have the same shape as the old hashes, so the repo doesn't show which items have moved. Records already published under hash keys may survive in copies of the repo made before the move, and anyone watching the repo while it happens can link each old key to its new one.
 
 **Why AAD-bound ciphertext**: AES-GCM's additional authenticated data on every item is its own record path, `xyz.atpass.vault.item/<rkey>`. That ties each ciphertext to the specific record it lives in: swapping one item's ciphertext into another item's record (e.g. a malicious PDS operator trying to confuse which password belongs to which site) fails to decrypt, because the AAD won't match. [`test/crypto.test.ts`](https://github.com/neilcar/atpass/blob/main/test/crypto.test.ts) asserts this directly.
 
 ## Security and threat model
 
-The master password is run through Argon2id (64 MiB memory, 3 iterations, parallelism 1 — above OWASP's minimums) with a per-account random salt, producing a 256-bit key. Each item is encrypted individually with AES-256-GCM: a random 12-byte nonce per item, plus the AAD binding from the data model section above.
+The master password is run through Argon2id (128 MiB memory, 5 iterations, parallelism 2 for new vaults; vaults created earlier keep their stored 64 MiB / 3 / 1, which is still the enforced floor) with a per-account random 32-byte salt (16 bytes for older vaults), producing a 256-bit key. Each item is encrypted individually with AES-256-GCM: a random 12-byte nonce per item, plus the AAD binding from the data model section above.
 
 **Protected against**
 
@@ -60,7 +60,7 @@ The master password is run through Argon2id (64 MiB memory, 3 iterations, parall
 
 **Not protected against**
 
-- A weak or reused master password — only a client-side length check (≥8 characters), no breach-list check or strength meter.
+- A reused or breached master password — new vaults reject guessable passwords (zxcvbn score below 3, checked locally in `initVault`), but there's no breach-list check, and vaults created before that check aren't re-tested.
 - A compromised local machine while the vault is unlocked (keylogger, malware reading process memory, a malicious browser extension sharing the page).
 - Theft of the atproto session token itself (see below) — it's a bearer credential for the whole repo, not scoped to the vault.
 
@@ -68,8 +68,8 @@ The master password is run through Argon2id (64 MiB memory, 3 iterations, parall
 
 | Client | Storage | Isolation |
 | --- | --- | --- |
-| CLI | `~/.atpass/session.json` | File permissions (`chmod 600`) |
-| Web app | `localStorage` | None from same-origin JS — readable by an XSS bug or a rogue browser extension |
+| CLI | OS keyring (Keychain / Credential Manager / Secret Service); `~/.atpass/session.json` only when no keyring is available | Keyring's per-user protection; the fallback file relies on permissions (`chmod 600`) and the CLI warns when it's used |
+| Web app | `sessionStorage` (per tab, cleared when it closes) | None from same-origin JS — readable by an XSS bug (the CSP limits script to the app's own origin) or a rogue browser extension |
 | Firefox extension | `browser.storage.local` | Extension sandbox — not reachable from page JavaScript at all |
 
 **Why the master password is independent of the atproto login**: an App Password lets someone read/write the account's whole repo; the master password is the only thing that can decrypt vault contents. A leaked App Password lets an attacker see ciphertext and delete records — not read a single password. Neither secret, alone, compromises the other.
@@ -86,7 +86,8 @@ interface CryptoAdapter {
   decryptItem<T>(key: Uint8Array, iv: string, ciphertext: string, aad: string): Promise<T>;
   makeVerifier(key: Uint8Array): Promise<EncryptedBlob>;
   checkVerifier(key: Uint8Array, iv: string, ciphertext: string): Promise<boolean>;
-  rkeyForName(name: string): Promise<string>;
+  newRecordKey(): string;
+  rkeyForName(name: string): Promise<string>; // legacy title-hash key, only to recognize items to migrate
   generatePassword(opts?: GeneratePasswordOptions): string;
 }
 ```
@@ -103,7 +104,7 @@ Two implementations satisfy it: `src/core/node/crypto.ts` (`node:crypto` for AES
 
 - Vite + React, genuinely client-only — no server component at all. The [Docker image](#releasing) just serves the built static files via nginx; there's nothing to configure or trust beyond the PDS itself.
 - Talks to the PDS directly from the browser via `com.atproto.server.createSession` (the same CORS-friendly XRPC calls the CLI makes), relying on the PDS's own CORS headers rather than any proxy of ours.
-- The vault key lives in a React state variable scoped to the tab; closing the tab or clicking Lock clears it. It's never written to `localStorage` or `IndexedDB` — only the atproto session token is.
+- The vault key lives in a React state variable scoped to the tab; closing the tab or clicking Lock clears it. It's never written to browser storage — only the atproto session token is, in the tab's `sessionStorage`.
 
 ### Firefox extension
 

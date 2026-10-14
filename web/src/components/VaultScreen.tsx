@@ -59,7 +59,7 @@ export function VaultScreen({ agent, vaultKey, onLock, onLogout }: { agent: Agen
     setBusy(true);
     setError(null);
     try {
-      await vault.removeItem(agent, title);
+      await vault.removeItem(agent, vaultKey, title);
       await refresh();
       setMode({ kind: "list" });
     } catch (err) {

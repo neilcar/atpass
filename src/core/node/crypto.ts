@@ -1,6 +1,6 @@
 import { randomBytes, randomInt, createCipheriv, createDecipheriv, timingSafeEqual, createHash } from "node:crypto";
 import { hashRaw as argon2HashRaw, Algorithm } from "@node-rs/argon2";
-import { assertKdfParams } from "../types.js";
+import { assertKdfParams, SALT_LEN } from "../types.js";
 import type { CryptoAdapter, EncryptedBlob, GeneratePasswordOptions, KdfParams } from "../types.js";
 
 const KEY_LEN = 32; // AES-256
@@ -16,14 +16,20 @@ function toBuffer(u: Uint8Array): Buffer {
 
 async function deriveVaultKey(masterPassword: string, salt: Uint8Array, params: KdfParams): Promise<Uint8Array> {
   assertKdfParams(params);
-  return argon2HashRaw(masterPassword, {
-    salt: toBuffer(salt),
-    memoryCost: params.memoryCost,
-    timeCost: params.timeCost,
-    parallelism: params.parallelism,
-    outputLen: KEY_LEN,
-    algorithm: Algorithm.Argon2id,
-  });
+  // The string itself can't be wiped (JS strings are immutable), but the UTF-8 copy handed to argon2 can.
+  const passwordBytes = Buffer.from(masterPassword, "utf8");
+  try {
+    return await argon2HashRaw(passwordBytes, {
+      salt: toBuffer(salt),
+      memoryCost: params.memoryCost,
+      timeCost: params.timeCost,
+      parallelism: params.parallelism,
+      outputLen: KEY_LEN,
+      algorithm: Algorithm.Argon2id,
+    });
+  } finally {
+    passwordBytes.fill(0);
+  }
 }
 
 async function encryptItem(key: Uint8Array, payload: unknown, aad: string): Promise<EncryptedBlob> {
@@ -91,12 +97,13 @@ function generatePassword(opts: GeneratePasswordOptions = {}): string {
 }
 
 export const nodeCrypto: CryptoAdapter = {
-  newSalt: () => randomBytes(16),
+  newSalt: () => randomBytes(SALT_LEN),
   deriveVaultKey,
   encryptItem,
   decryptItem,
   makeVerifier,
   checkVerifier,
+  newRecordKey: () => randomBytes(16).toString("hex"),
   rkeyForName,
   generatePassword,
 };

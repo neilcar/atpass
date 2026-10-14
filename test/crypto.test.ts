@@ -6,7 +6,7 @@ const { newSalt, deriveVaultKey, encryptItem, decryptItem, makeVerifier, checkVe
 
 test("Argon2id derivation is deterministic for the same password/salt/params", async () => {
   const salt = newSalt();
-  assert.equal(salt.length, 16);
+  assert.equal(salt.length, 32);
   const params = { memoryCost: 65536, timeCost: 3, parallelism: 1 };
   const key1 = await deriveVaultKey("correct horse battery staple", salt, params);
   const key2 = await deriveVaultKey("correct horse battery staple", salt, params);
