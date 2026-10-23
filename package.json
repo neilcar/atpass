@@ -37,7 +37,7 @@
     "zxcvbn": "^4.4.2"
   },
   "devDependencies": {
-    "@types/node": "^22.10.2",
+    "@types/node": "^26.6.5",
     "@types/prompts": "^2.4.9",
     "@types/zxcvbn": "^4.4.5",
     "hash-wasm": "^4.12.0",
