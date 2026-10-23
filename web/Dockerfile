@@ -3,7 +3,7 @@
 # see the `docker build -f web/Dockerfile .` invocation in
 # .github/workflows/release.yml.
 
-FROM node:22-slim AS build
+FROM node:25-slim AS build
 WORKDIR /app
 
 # Installed as its own layer, before the source copy, so `docker build` only
