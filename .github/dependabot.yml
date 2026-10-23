@@ -5,6 +5,16 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    groups:
+      # Patch and minor updates arrive as one weekly PR; majors stay
+      # separate so each can be reviewed on its own.
+      npm-minor-patch:
+        update-types: ["minor", "patch"]
+    ignore:
+      # @types/node follows the Node major atpass runs on (CI 22, web image
+      # 24); bump it by hand with a Node upgrade.
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
   - package-ecosystem: docker
     directory: /web
     schedule:
