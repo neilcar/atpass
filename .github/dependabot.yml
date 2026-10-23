@@ -9,6 +9,11 @@ updates:
     directory: /web
     schedule:
       interval: weekly
+    ignore:
+      # Node majors are taken by hand, LTS lines only: Dependabot would
+      # otherwise offer odd-numbered releases (e.g. 25), which aren't LTS.
+      - dependency-name: node
+        update-types: ["version-update:semver-major"]
   - package-ecosystem: github-actions
     directory: /
     schedule:
