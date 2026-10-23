@@ -9,6 +9,12 @@ updates:
     directory: /web
     schedule:
       interval: weekly
+    ignore:
+      # Only even-numbered (LTS) Node majors: skip the odd, short-lived ones.
+      # Patch and minor updates within a major still come through. Extend the
+      # list past 39 when needed.
+      - dependency-name: node
+        versions: [">= 25, < 26", ">= 27, < 28", ">= 29, < 30", ">= 31, < 32", ">= 33, < 34", ">= 35, < 36", ">= 37, < 38", ">= 39, < 40"]
   - package-ecosystem: github-actions
     directory: /
     schedule:
