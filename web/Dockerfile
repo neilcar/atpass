@@ -20,11 +20,11 @@ COPY src ./src
 COPY web ./web
 RUN npm run build --workspace web
 
-# -slim (no image-filter module, so no libpng/tiff/freetype/etc.) is all a
-# static-file server needs, and nginx 1.27 is EOL; this tracks the stable line.
-FROM nginx:1.30-alpine-slim
-# Pick up Alpine security fixes published since the base image was built.
-RUN apk upgrade --no-cache
+# Distroless nginx from github.com/neilcar/distroless (Wolfi packages pinned to
+# released versions, rebuilt automatically): no shell or package manager, runs as
+# non-root, so it listens on 8080. Mainline rather than stable: Wolfi's public
+# nginx-stable is stuck at 1.30.2 with unfixed CVEs, mainline has none.
+FROM ghcr.io/neilcar/distroless/nginx:mainline@sha256:42652f2e0bc6e02c9c2e92a84857e940f8e25f68e862693b7eb32f929e44ad3a
 COPY web/nginx.conf /etc/nginx/conf.d/default.conf
 COPY --from=build /app/web/dist /usr/share/nginx/html
-EXPOSE 80
+EXPOSE 8080

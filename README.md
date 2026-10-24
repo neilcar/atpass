@@ -125,8 +125,11 @@ CLI via `src/core`.
 npm run web:dev     # dev server at http://localhost:5173
 npm run web:build   # production build to web/dist
 docker build -f web/Dockerfile -t atpass-web .   # from the repo root — see web/Dockerfile
-docker run --rm -p 8080:80 atpass-web            # -> http://localhost:8080
+docker run --rm -p 8080:8080 atpass-web          # -> http://localhost:8080
 ```
+
+The image runs as a non-root user on **port 8080** (it listened on 80 up to
+v0.1.0, so update any `-p …:80` mappings).
 
 It's a client-only static app: sign in with your handle + App Password (same
 CORS-friendly `com.atproto.server.createSession` call the CLI uses), create
