@@ -2,6 +2,10 @@ version: 2
 updates:
   # npm workspaces (web, extension) share the root package-lock.json.
   - package-ecosystem: npm
+    # 3-day cooldown on new releases (supply-chain: let fresh
+    # versions bake); security updates bypass cooldown.
+    cooldown:
+      default-days: 3
     directory: /
     schedule:
       interval: weekly
