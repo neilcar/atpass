@@ -1,0 +1,176 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "description": "Dependency updates (replaces Dependabot). Weekly, after a 3-day release age; non-major updates automerge once CI passes, majors and language-runtime bumps open a PR for review. Our own ghcr.io/neilcar images are bumped by their repos' pipelines; the public distroless bases follow rebuilt digests.",
+  "extends": [
+    "config:recommended",
+    ":disableDependencyDashboard"
+  ],
+  "timezone": "America/New_York",
+  "schedule": [
+    "* 0-5 * * 1"
+  ],
+  "minimumReleaseAge": "3 days",
+  "internalChecksFilter": "strict",
+  "postUpdateOptions": [
+    "gomodTidy"
+  ],
+  "lockFileMaintenance": {
+    "enabled": true,
+    "schedule": [
+      "* 0-5 1 * *"
+    ]
+  },
+  "packageRules": [
+    {
+      "description": "Non-major updates, digests and the monthly lockfile refresh automerge once CI passes (Renovate merges them itself).",
+      "matchUpdateTypes": [
+        "minor",
+        "patch",
+        "digest",
+        "pinDigest",
+        "lockFileMaintenance"
+      ],
+      "automerge": true,
+      "automergeType": "pr",
+      "platformAutomerge": false
+    },
+    {
+      "description": "Our own images: bumped by each repo's image workflow (private packages).",
+      "matchDatasources": [
+        "docker"
+      ],
+      "matchPackageNames": [
+        "/^ghcr\\.io/neilcar//",
+        "!/^ghcr\\.io/neilcar/distroless//"
+      ],
+      "enabled": false
+    },
+    {
+      "description": "distroless bases: stay on the pinned tag's line (e.g. Python 3.12) and follow its rebuilt digests; moving to another tag is a deliberate change.",
+      "matchDatasources": [
+        "docker"
+      ],
+      "matchPackageNames": [
+        "/^ghcr\\.io/neilcar/distroless//"
+      ],
+      "matchUpdateTypes": [
+        "major",
+        "minor",
+        "patch"
+      ],
+      "enabled": false
+    },
+    {
+      "description": "distroless digest bumps are our own security rebuilds (rescan -> sync -> build): take them without the 3-day release age.",
+      "matchDatasources": [
+        "docker"
+      ],
+      "matchPackageNames": [
+        "/^ghcr\\.io/neilcar/distroless//"
+      ],
+      "matchUpdateTypes": [
+        "digest",
+        "pinDigest"
+      ],
+      "minimumReleaseAge": null
+    },
+    {
+      "description": "Language runtimes (base image tags, go directive, .python-version, setup-* inputs): a new Go/Rust/Python/Node minor is a deliberate change, so it opens a PR. Patches and digests still automerge.",
+      "matchPackageNames": [
+        "golang",
+        "docker.io/library/golang",
+        "rust",
+        "docker.io/library/rust",
+        "python",
+        "docker.io/library/python",
+        "node",
+        "docker.io/library/node",
+        "go"
+      ],
+      "matchUpdateTypes": [
+        "minor"
+      ],
+      "automerge": false
+    },
+    {
+      "matchManagers": [
+        "github-actions"
+      ],
+      "groupName": "GitHub Actions"
+    },
+    {
+      "matchManagers": [
+        "pep621",
+        "pip_requirements"
+      ],
+      "matchUpdateTypes": [
+        "minor",
+        "patch"
+      ],
+      "groupName": "Python dependencies"
+    },
+    {
+      "matchManagers": [
+        "gomod"
+      ],
+      "matchUpdateTypes": [
+        "minor",
+        "patch",
+        "digest"
+      ],
+      "groupName": "Go modules"
+    },
+    {
+      "matchManagers": [
+        "cargo"
+      ],
+      "matchUpdateTypes": [
+        "minor",
+        "patch"
+      ],
+      "groupName": "Rust crates"
+    },
+    {
+      "matchManagers": [
+        "npm"
+      ],
+      "matchUpdateTypes": [
+        "minor",
+        "patch"
+      ],
+      "groupName": "npm dependencies"
+    },
+    {
+      "matchManagers": [
+        "dockerfile",
+        "docker-compose"
+      ],
+      "matchUpdateTypes": [
+        "digest",
+        "pinDigest"
+      ],
+      "groupName": "base image digests"
+    },
+    {
+      "description": "@types/node follows the Node major atpass runs on (CI 22, web image 24); bump it by hand with a Node upgrade.",
+      "matchPackageNames": [
+        "@types/node"
+      ],
+      "matchUpdateTypes": [
+        "major"
+      ],
+      "enabled": false
+    },
+    {
+      "description": "Only even-numbered (LTS) Node majors for the web image; patch and minor updates within a major still come through.",
+      "matchDatasources": [
+        "docker"
+      ],
+      "matchPackageNames": [
+        "node",
+        "docker.io/library/node"
+      ],
+      "allowedVersions": "/^\\d*[02468](\\D|$)/"
+    }
+  ]
+}
