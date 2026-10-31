@@ -61,6 +61,20 @@
       "enabled": false
     },
     {
+      "description": "distroless digest bumps are our own security rebuilds (rescan -> sync -> build): take them without the 3-day release age.",
+      "matchDatasources": [
+        "docker"
+      ],
+      "matchPackageNames": [
+        "/^ghcr\\.io/neilcar/distroless//"
+      ],
+      "matchUpdateTypes": [
+        "digest",
+        "pinDigest"
+      ],
+      "minimumReleaseAge": null
+    },
+    {
       "description": "Language runtimes (base image tags, go directive, .python-version, setup-* inputs): a new Go/Rust/Python/Node minor is a deliberate change, so it opens a PR. Patches and digests still automerge.",
       "matchPackageNames": [
         "golang",
