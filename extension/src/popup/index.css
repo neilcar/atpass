@@ -5,8 +5,8 @@
   --border: #2a2f3a;
   --text: #e7e9ee;
   --muted: #8b93a3;
-  --accent: #5b8dfc;
-  --accent-2: #4472e0;
+  --accent: #3563d9;  /* white button text needs 4.5:1; #5b8dfc was 3.2:1 */
+  --accent-2: #2c4fc2;
   --danger: #e5484d;
   --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
 }
@@ -20,7 +20,7 @@
     --muted: #666f80;
     --accent: #3861e0;
     --accent-2: #2c4fc2;
-    --danger: #d5343a;
+    --danger: #c4262c;  /* text on light panels: 5.0:1 or better */
   }
 }
 
