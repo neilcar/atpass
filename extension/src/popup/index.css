@@ -20,7 +20,7 @@
     --muted: #666f80;
     --accent: #3861e0;
     --accent-2: #2c4fc2;
-    --danger: #d5343a;
+    --danger: #c4262c;  /* text on light panels: 5.0:1 or better */
   }
 }
 
