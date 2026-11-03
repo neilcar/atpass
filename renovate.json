@@ -75,7 +75,7 @@
       "minimumReleaseAge": null
     },
     {
-      "description": "Language runtimes (base image tags, go directive, .python-version, setup-* inputs): a new Go/Rust/Python/Node minor is a deliberate change, so it opens a PR. Patches and digests still automerge.",
+      "description": "Language runtimes (base image tags, go directive, .python-version, setup-python/node/go version inputs): a new Go/Rust/Python/Node minor is a deliberate change, so it opens a PR. Patches and digests still automerge.",
       "matchPackageNames": [
         "golang",
         "docker.io/library/golang",
@@ -85,7 +85,10 @@
         "docker.io/library/python",
         "node",
         "docker.io/library/node",
-        "go"
+        "go",
+        "actions/python-versions",
+        "actions/node-versions",
+        "actions/go-versions"
       ],
       "matchUpdateTypes": [
         "minor"
