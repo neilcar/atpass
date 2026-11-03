@@ -1,6 +1,6 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "description": "Dependency updates (replaces Dependabot). Weekly, after a 3-day release age; non-major updates automerge once CI passes, majors and language-runtime bumps open a PR for review. Our own ghcr.io/neilcar images are bumped by their repos' pipelines; the public distroless bases follow rebuilt digests.",
+  "description": "Dependency updates (replaces Dependabot). Weekly, after a 3-day release age; non-major updates automerge once CI passes, Go/Python/Node minors and GitHub Actions majors included; other majors open a PR for review. Our own ghcr.io/neilcar images are bumped by their repos' pipelines; the public distroless bases follow rebuilt digests.",
   "extends": [
     "config:recommended",
     ":disableDependencyDashboard"
@@ -29,6 +29,30 @@
         "digest",
         "pinDigest",
         "lockFileMaintenance"
+      ],
+      "automerge": true,
+      "automergeType": "pr",
+      "platformAutomerge": false
+    },
+    {
+      "description": "Digest pins and lockfile refreshes have no release date to age (the 3-day check would never clear), so they skip it.",
+      "matchUpdateTypes": [
+        "pin",
+        "pinDigest",
+        "lockFileMaintenance"
+      ],
+      "minimumReleaseAge": null,
+      "automerge": true,
+      "automergeType": "pr",
+      "platformAutomerge": false
+    },
+    {
+      "description": "GitHub Actions majors automerge once CI passes; a broken release step is rare and cheap to fix forward.",
+      "matchManagers": [
+        "github-actions"
+      ],
+      "matchUpdateTypes": [
+        "major"
       ],
       "automerge": true,
       "automergeType": "pr",
@@ -73,27 +97,6 @@
         "pinDigest"
       ],
       "minimumReleaseAge": null
-    },
-    {
-      "description": "Language runtimes (base image tags, go directive, .python-version, setup-python/node/go version inputs): a new Go/Rust/Python/Node minor is a deliberate change, so it opens a PR. Patches and digests still automerge.",
-      "matchPackageNames": [
-        "golang",
-        "docker.io/library/golang",
-        "rust",
-        "docker.io/library/rust",
-        "python",
-        "docker.io/library/python",
-        "node",
-        "docker.io/library/node",
-        "go",
-        "actions/python-versions",
-        "actions/node-versions",
-        "actions/go-versions"
-      ],
-      "matchUpdateTypes": [
-        "minor"
-      ],
-      "automerge": false
     },
     {
       "matchManagers": [
