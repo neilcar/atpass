@@ -24,7 +24,7 @@ RUN npm run build --workspace web
 # released versions, rebuilt automatically): no shell or package manager, runs as
 # non-root, so it listens on 8080. Mainline rather than stable: Wolfi's public
 # nginx-stable is stuck at 1.30.2 with unfixed CVEs, mainline has none.
-FROM ghcr.io/neilcar/distroless/nginx:mainline@sha256:5cc2566b727bb8977df5a41db50524bbe127bb3e157fe6c4e911dde5aace857f
+FROM ghcr.io/neilcar/distroless/nginx:mainline@sha256:6e820ad79dd143be2901e812f7c1de2f0f2b444e5f25a3ae0b3be23c1f6bff49
 COPY web/nginx.conf /etc/nginx/conf.d/default.conf
 COPY --from=build /app/web/dist /usr/share/nginx/html
 EXPOSE 8080
